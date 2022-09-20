@@ -69,6 +69,10 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+                     (PeerSharing (..))
 import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
                      connectionManagerTraceMap, validTransitionMap,
                      verifyAbstractTransition, verifyAbstractTransitionOrder)
@@ -433,9 +437,10 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
     script =
       DiffusionScript (SimArgs 1 10)
         [ ( NodeArgs (-6) (Just 180)
-              [RelayAccessDomain "test2" 65535]
+              (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
               (Map.fromList [("test2", [read "9022:64c9:4e9b:9281:913f:3fb4:a447:28e", read "d412:ff8f:ce57:932d:b74c:989:48af:73f4", read "0:6:0:3:0:6:0:5"])])
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
+              NoPeerSharing
               [(1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
               PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 2, targetNumberOfEstablishedPeers = 2, targetNumberOfActivePeers = 1}
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
@@ -448,9 +453,10 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
             ]
           )
         , ( NodeArgs (1) (Just 135)
-             [RelayAccessAddress "0:7:0:7::" 65533]
+             (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
              (Map.fromList [("test2", [read "0:7:0:7::"])])
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
+             NoPeerSharing
              []
              PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 1, targetNumberOfActivePeers = 1}
              (Script (DNSTimeout {getDNSTimeout = 0.28} :| [DNSTimeout {getDNSTimeout = 0.204},DNSTimeout {getDNSTimeout = 0.213}]))
@@ -1704,7 +1710,7 @@ async_demotion_network_script =
     common = NodeArgs {
         naSeed             = 10,
         naMbTime           = Just 1,
-        naRelays           = [],
+        naRelays           = Map.empty,
         naDomainMap        = Map.empty,
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
@@ -1712,7 +1718,8 @@ async_demotion_network_script =
                            = Governor.PeerSelectionTargets 0 1 1 1,
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
-                           = singletonScript (DNSLookupDelay 0.2)
+                           = singletonScript (DNSLookupDelay 0.2),
+        naPeerSharing      = NoPeerSharing
       }
 
 

@@ -73,7 +73,6 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..), PortNumber,
                      RelayAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
                      (byteLimitsBlockFetch, timeLimitsBlockFetch)
 import           Ouroboros.Network.Protocol.ChainSync.Codec
@@ -104,6 +103,9 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelect
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
                      chooseInt, counterexample, frequency, oneof, property,
                      shrinkList, sized, sublistOf, suchThat, vectorOf, (.&&.))
@@ -139,11 +141,13 @@ data NodeArgs =
       -- ^ 'randomBlockGenerationArgs' seed argument
     , naMbTime                :: Maybe DiffTime
       -- ^ 'LimitsAndTimeouts' argument
-    , naRelays                :: [RelayAccessPoint]
+    , naRelays                :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
     , naDomainMap             :: Map Domain [IP]
       -- ^ 'Interfaces' 'iDomainMap' value
     , naAddr                  :: NtNAddr
+      -- ^ 'Arguments' 'aIPAddress' value
+    , naPeerSharing           :: PeerSharing
       -- ^ 'Arguments' 'aIPAddress' value
     , naLocalRootPeers        :: [(Int, Map RelayAccessPoint PeerAdvertise)]
       -- ^ 'Arguments' 'LocalRootPeers' values
@@ -324,6 +328,8 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
 
   lrp <- genLocalRootPeers rapsWithoutSelf rap
   relays <- sublistOf rapsWithoutSelf
+  relayPeerAdvertise <- vectorOf (length relays) arbitrary
+  let relayMap = Map.fromList (zip relays relayPeerAdvertise)
 
   -- Make sure our targets for active peers cover the maximum of peers
   -- one generated
@@ -332,17 +338,20 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
   dnsTimeout <- arbitrary
   dnsLookupDelay <- arbitrary
 
+  peerSharing <- arbitrary
+
   return
    $ NodeArgs
       { naSeed                  = seed
       , naMbTime                = mustReplyTimeout
-      , naRelays                = relays
+      , naRelays                = relayMap
       , naDomainMap             = dMap
       , naAddr                  = ntnAddr
       , naLocalRootPeers        = lrp
       , naLocalSelectionTargets = peerSelectionTargets
       , naDNSTimeoutScript      = dnsTimeout
       , naDNSLookupDelayScript  = dnsLookupDelay
+      , naPeerSharing           = peerSharing
       }
   where
     hasActive :: Int -> PeerSelectionTargets -> Bool
@@ -721,6 +730,7 @@ diffusionSimulation
             , naLocalSelectionTargets = peerSelectionTargets
             , naDNSTimeoutScript      = dnsTimeout
             , naDNSLookupDelayScript  = dnsLookupDelay
+            , naPeerSharing           = peerSharing
             }
             ntnSnocket
             ntcSnocket
@@ -803,6 +813,7 @@ diffusionSimulation
               , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aPeerSharing          = peerSharing
               , NodeKernel.aReadUseLedgerAfter   = readUseLedgerAfter
               , NodeKernel.aProtocolIdleTimeout  = 5
               , NodeKernel.aTimeWaitTimeout      = 30
@@ -818,14 +829,14 @@ diffusionSimulation
                          arguments
                          (tracersExtraWithTimeName rap)
 
-    domainResolver :: [RelayAccessPoint]
+    domainResolver :: Map RelayAccessPoint PeerAdvertise
                    -> StrictTVar m (Map Domain [(IP, TTL)])
                    -> LookupReqs
                    -> [DomainAccessPoint]
                    -> m (Map DomainAccessPoint (Set NtNAddr))
     domainResolver raps dMapVar _ daps = do
       dMap <- fmap (map fst) <$> atomically (readTVar dMapVar)
-      let domains    = [ (d, p) | RelayAccessDomain d p <- raps ]
+      let domains    = [ (d, p) | (RelayAccessDomain d p, _) <- Map.assocs raps ]
           domainsAP  = uncurry DomainAccessPoint <$> domains
           mapDomains = [ ( DomainAccessPoint d p
                          , Set.fromList
