@@ -67,7 +67,7 @@ import           Ouroboros.Network.Snocket
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
 --
-data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError version m =
+data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError versionNumber versionData m =
     ConnectionManagerArguments {
         -- | Connection manager tracer.
         --
@@ -76,7 +76,7 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         -- | Trace state transitions.
         --
         cmTrTracer            :: Tracer m (TransitionTrace peerAddr
-                                            (ConnectionState peerAddr handle handleError version m)),
+                                            (ConnectionState peerAddr handle handleError versionNumber m)),
 
         -- | Mux trace.
         --
@@ -122,10 +122,10 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         --
         cmOutboundIdleTimeout :: DiffTime,
 
-        -- | @version@ represents the tuple of @versionNumber@ and
-        -- @agreedOptions@.
+        -- | Given a version number and respective version data, get the
+        -- 'DataFlow'.
         --
-        connectionDataFlow    :: version -> DataFlow,
+        connectionDataFlow    :: versionNumber -> versionData -> DataFlow,
 
         -- | Prune policy
         --
@@ -522,8 +522,9 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 -- is responsible for the resource.
 --
 withConnectionManager
-    :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version m a.
-       ( MonadLabelledSTM   m
+    :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version versionData m a.
+       ( Monad              m
+       , MonadLabelledSTM   m
        , MonadTraceSTM      m
        -- 'MonadFork' is only to get access to 'throwTo'
        , MonadFork          m
@@ -539,8 +540,8 @@ withConnectionManager
        , Show     peerAddr
        , Typeable peerAddr
        )
-    => ConnectionManagerArguments handlerTrace socket peerAddr handle handleError version m
-    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError version m
+    => ConnectionManagerArguments handlerTrace socket peerAddr handle handleError version versionData m
+    -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError (version, versionData) m
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
@@ -760,8 +761,8 @@ withConnectionManager ConnectionManagerArguments {
       -> MutableConnState peerAddr handle handleError version m
       -> socket
       -> ConnectionId peerAddr
-      -> PromiseWriter m (Either handleError (handle, version))
-      -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
+      -> PromiseWriter m (Either handleError (handle, (version, versionData)))
+      -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
       -> m (Async m ())
     forkConnectionHandler stateVar
                           mutableConnState@MutableConnState { connVar }
@@ -989,7 +990,7 @@ withConnectionManager ConnectionManagerArguments {
         :: HasCallStack
         => FreshIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
-        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
+        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
         -> Word32
         -- ^ inbound connections hard limit
         -- TODO: This is needed because the accept loop can not guarantee that
@@ -1154,8 +1155,8 @@ withConnectionManager ConnectionManagerArguments {
 
                 return (Disconnected connId (Just handleError))
 
-              Right (handle, version) -> do
-                let dataFlow = connectionDataFlow version
+              Right (handle, (version, versionData)) -> do
+                let dataFlow = connectionDataFlow version versionData
                 mbTransition <- atomically $ do
                   connState <- readTVar connVar
                   case connState of
@@ -1174,7 +1175,7 @@ withConnectionManager ConnectionManagerArguments {
                     UnnegotiatedState {} -> do
                       let connState' = InboundIdleState
                                          connId connThread handle
-                                         (connectionDataFlow version)
+                                         (connectionDataFlow version versionData)
                       writeTVar connVar connState'
                       return (Just $ mkTransition connState connState')
 
@@ -1405,7 +1406,7 @@ withConnectionManager ConnectionManagerArguments {
         :: HasCallStack
         => FreshIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
-        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
+        -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
     requestOutboundConnectionImpl freshIdSupply stateVar handler peerAddr = do
@@ -1776,8 +1777,8 @@ withConnectionManager ConnectionManagerArguments {
 
                 return (Disconnected connId (Just handleError))
 
-              Right (handle, version) -> do
-                let dataFlow = connectionDataFlow version
+              Right (handle, (version, versionData)) -> do
+                let dataFlow = connectionDataFlow version versionData
                 -- We can safely overwrite the state: after successful
                 -- `connect` it's not possible to have a race condition
                 -- with any other inbound thread.  We are also guaranteed

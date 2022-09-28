@@ -592,7 +592,7 @@ mkConnectionHandler :: forall m handlerTrace.
                     -> ConnectionHandler InitiatorResponderMode
                                          handlerTrace (FD m)
                                          Addr (Handle m)
-                                         Void Version
+                                         Void (Version, ())
                                          m
 mkConnectionHandler snocket =
     ConnectionHandler $
@@ -600,7 +600,7 @@ mkConnectionHandler snocket =
         handler
         handler
   where
-    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void Version m
+    handler :: ConnectionHandlerFn handlerTrace (FD m) Addr (Handle m) Void (Version, ()) m
     handler fd promise _ ConnectionId { remoteAddress } _ =
       MaskedAction $ \unmask ->
         do threadId <- myThreadId
@@ -612,7 +612,7 @@ mkConnectionHandler snocket =
                         (Right ( Handle { hScheduleEntry = se
                                         , hThreadId = threadId
                                         }
-                               , Version (seDataFlow se)
+                               , (Version (seDataFlow se), ())
                                )))
 
            -- The connection manager throws async exception to kill the
@@ -755,7 +755,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
               cmAddressType = \_ -> Just IPv4Address,
               cmSnocket = snocket,
               cmConfigureSocket = \_ _ -> return (),
-              connectionDataFlow = \(Version df) -> df,
+              connectionDataFlow = \(Version df) _ -> df,
               cmPrunePolicy = simplePrunePolicy,
               cmConnectionsLimits = AcceptedConnectionsLimit {
                   acceptedConnectionsHardLimit = maxBound,
