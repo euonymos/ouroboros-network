@@ -101,7 +101,8 @@ import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
-                     PeerStateActionsArguments (..), withPeerStateActions)
+                     PeerStateActionsArguments (..), pchPeerSharing,
+                     withPeerStateActions)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
                      DomainAccessPoint, LookupReqs (..), RelayAccessPoint (..),
                      TraceLocalRootPeers (..), TracePublicRootPeers (..),
@@ -489,6 +490,11 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnDataFlow
           :: ntnVersion -> ntnVersionData -> DataFlow,
 
+        -- | peer sharing information used by peer selection governor to
+        -- decide which peers are available for performing peer sharing
+        diNtnPeerSharing
+          :: ntnVersionData -> PeerSharing,
+
         -- | node-to-node peer address
         --
         diNtnToPeerAddr
@@ -594,6 +600,7 @@ runM Interfaces
        , diNtnHandshakeArguments
        , diNtnAddressType
        , diNtnDataFlow
+       , diNtnPeerSharing
        , diNtnToPeerAddr
        , diNtnDomainResolver
        , diNtcSnocket
@@ -898,6 +905,7 @@ runM Interfaces
                       daReadLocalRootPeers
                       daReadPublicRootPeers
                       daPeerSharing
+                      (pchPeerSharing diNtnPeerSharing)
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerSelectionActionsThread
@@ -1023,6 +1031,7 @@ runM Interfaces
                       daReadLocalRootPeers
                       daReadPublicRootPeers
                       daPeerSharing
+                      (pchPeerSharing diNtnPeerSharing)
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerRootProviderThread
@@ -1219,6 +1228,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diNtnHandshakeArguments,
                  diNtnAddressType = socketAddressType,
                  diNtnDataFlow = nodeDataFlow,
+                 diNtnPeerSharing = peerSharing,
                  diNtnToPeerAddr = curry IP.toSockAddr,
                  diNtnDomainResolver,
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,6 +11,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers
   , empty
   , size
   , insert
+  , updatePeerSharing
   , delete
   , toSet
   , member
@@ -215,6 +217,26 @@ insert peeraddrs
                                IsLedgerPeer    -> IsLedgerPeer
                                IsNotLedgerPeer -> knownLedgerPeer new
       }
+
+updatePeerSharing :: Ord peeraddr
+                  => peeraddr
+                  -> Maybe PeerSharing
+                  -> KnownPeers peeraddr
+                  -> KnownPeers peeraddr
+updatePeerSharing peeraddr
+                  mbps
+                  knownPeers@KnownPeers {
+                    allPeers
+                  } =
+  case Map.lookup peeraddr allPeers of
+    Nothing -> knownPeers
+    Just (KnownPeerInfo i b _ pa lp) ->
+      case mbps of
+        Nothing  -> knownPeers
+        Just !_ ->
+          let allPeers' =
+                Map.insert peeraddr (KnownPeerInfo i b mbps pa lp) allPeers
+           in knownPeers { allPeers = allPeers' }
 
 delete :: Ord peeraddr
        => Set peeraddr
