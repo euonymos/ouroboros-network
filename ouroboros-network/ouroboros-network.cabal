@@ -235,8 +235,6 @@ test-suite test
                        -rtsopts
                        +RTS -T -RTS
 
-
-
 executable demo-chain-sync
   hs-source-dirs:      demo
   main-is:             chain-sync.hs
