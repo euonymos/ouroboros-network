@@ -70,6 +70,7 @@ import           Simulation.Network.Snocket (AddressType (..),
 
 import           Test.Ouroboros.Network.Orphans ()
 
+import           Ouroboros.Network.ConnectionId (ConnectionId)
 import           Ouroboros.Network.NodeToNode ()
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
@@ -174,7 +175,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
 data NodeKernel header block m = NodeKernel {
       -- | upstream chains
       nkClientChains
-        :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain block))),
+        :: StrictTVar m (Map (ConnectionId NtNAddr) (StrictTVar m (Chain block))),
 
       -- | chain producer state
       nkChainProducerState
@@ -193,7 +194,7 @@ newNodeKernel = NodeKernel
 --
 registerClientChains :: MonadSTM m
                      => NodeKernel header block m
-                     -> NtNAddr
+                     -> ConnectionId NtNAddr
                      -> m (StrictTVar m (Chain block))
 registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
     chainVar <- newTVar Chain.Genesis
@@ -205,7 +206,7 @@ registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
 --
 unregisterClientChains :: MonadSTM m
                        => NodeKernel header block m
-                       -> NtNAddr
+                       -> ConnectionId NtNAddr
                        -> m ()
 unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
     modifyTVar nkClientChains (Map.delete peerAddr)
