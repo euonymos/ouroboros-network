@@ -47,10 +47,10 @@ import           Data.Kind (Type)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map (Map)
 import           Data.Maybe (catMaybes, maybeToList)
-import           Data.Set (Set)
+import           Data.Set (Set, toList)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
-import           System.Random (StdGen, newStdGen, split)
+import           System.Random (StdGen, newStdGen, randomR, split)
 #ifdef POSIX
 import qualified System.Posix.Signals as Signals
 #endif
@@ -72,6 +72,8 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket (configureSocket,
                      configureSystemdSocket)
 
+import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Data.List (permutations)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
@@ -94,7 +96,8 @@ import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-                     PeerSelectionCounters (..), TracePeerSelection (..))
+                     PeerSelectionCounters (..), PublicPeerSelectionState (..),
+                     TracePeerSelection (..), emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
@@ -108,6 +111,8 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
                      TraceLocalRootPeers (..), TracePublicRootPeers (..),
                      ioDNSActions, resolveDomainAccessPoint)
 import           Ouroboros.Network.PeerSelection.Simple
+import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server2 (ServerArguments (..),
                      ServerControlChannel, ServerTrace (..))
@@ -283,24 +288,28 @@ data ApplicationsExtra ntnAddr m a =
     ApplicationsExtra {
     -- | /node-to-node/ rethrow policy
     --
-      daRethrowPolicy      :: RethrowPolicy
+      daRethrowPolicy       :: RethrowPolicy
 
     -- | /node-to-node/ return policy
     --
-    , daReturnPolicy       :: ReturnPolicy a
+    , daReturnPolicy        :: ReturnPolicy a
 
     -- | /node-to-client/ rethrow policy
     --
-    , daLocalRethrowPolicy :: RethrowPolicy
+    , daLocalRethrowPolicy  :: RethrowPolicy
 
     -- | 'PeerMetrics' used by peer selection policy (see
     -- 'simplePeerSelectionPolicy')
     --
-    , daPeerMetrics        :: PeerMetrics m ntnAddr
+    , daPeerMetrics         :: PeerMetrics m ntnAddr
 
     -- | Used by churn-governor
     --
-    , daBlockFetchMode     :: STM m FetchMode
+    , daBlockFetchMode      :: STM m FetchMode
+
+    -- | Used for peer sharing protocol
+    --
+    , daPeerSharingRegistry :: PeerSharingRegistry ntnAddr m
   }
 
 -- | Diffusion will always run initiator of node-to-node protocols, but in some
@@ -553,6 +562,7 @@ runM
        , MonadThrow  (STM m)
        , MonadTime        m
        , MonadTimer       m
+       , MonadMVar        m
        , Eq (Async m Void)
        , Typeable  ntnAddr
        , Ord       ntnAddr
@@ -663,6 +673,7 @@ runM Interfaces
        , daReturnPolicy
        , daPeerMetrics
        , daBlockFetchMode
+       , daPeerSharingRegistry
        }
   = do
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
@@ -809,6 +820,9 @@ runM Interfaces
                 min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
             }
 
+
+          publicStateVar <- newTVarIO emptyPublicPeerSelectionState
+
           withLedgerPeers
             ledgerPeersRng
             diNtnToPeerAddr
@@ -906,6 +920,7 @@ runM Interfaces
                       daReadPublicRootPeers
                       daPeerSharing
                       (pchPeerSharing diNtnPeerSharing)
+                      (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerSelectionActionsThread
@@ -919,6 +934,7 @@ runM Interfaces
                           dtDebugPeerSelectionInitiatorTracer
                           dtTracePeerSelectionCounters
                           fuzzRng
+                          publicStateVar
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
                              policyRngVar (readTVar churnModeVar)
@@ -974,6 +990,22 @@ runM Interfaces
                           cmOutboundIdleTimeout = daProtocolIdleTimeout
                         }
 
+                    computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
+                                            -> StdGen
+                                            -> PeerSharingAmount
+                                            -> m [ntnAddr]
+                    computePeerSharingPeers readPublicState gen amount = do
+                      publicState <- atomically readPublicState
+                      let randomLists = permutations
+                                      . toList
+                                      . availableToShare
+                                      $ publicState
+                          (i, _) = randomR (0, length randomLists) gen
+                          -- permutation [] == [[]] so this won't be partial
+                          randomList = randomLists !! i
+                      return (take (fromIntegral amount) randomList)
+
+
                     connectionHandler
                       :: NodeToNodeConnectionHandler
                           InitiatorResponderMode
@@ -984,7 +1016,8 @@ runM Interfaces
                          dtMuxTracer
                          SingInitiatorResponderMode
                          diNtnHandshakeArguments
-                         daApplicationInitiatorResponderMode
+                         (daApplicationInitiatorResponderMode
+                            (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng))
                          (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
                 withConnectionManager
@@ -1032,6 +1065,7 @@ runM Interfaces
                       daReadPublicRootPeers
                       daPeerSharing
                       (pchPeerSharing diNtnPeerSharing)
+                      (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerRootProviderThread
@@ -1045,6 +1079,7 @@ runM Interfaces
                           dtDebugPeerSelectionInitiatorResponderTracer
                           dtTracePeerSelectionCounters
                           fuzzRng
+                          publicStateVar
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
                              policyRngVar (readTVar churnModeVar)
@@ -1112,7 +1147,8 @@ runM Interfaces
     (policyRng,      rng2) = split rng1
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
-    (ntnInbgovRng,   ntcInbgovRng) = split rng4
+    (ntnInbgovRng,   rng5) = split rng4
+    (ntcInbgovRng,   peerSharingRng) = split rng5
 
     -- Only the 'IOManagerError's are fatal, all the other exceptions in the
     -- networking code will only shutdown the bearer (see 'ShutdownPeer' why

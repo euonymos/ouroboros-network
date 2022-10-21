@@ -48,7 +48,8 @@ import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..), ConnectionId (..))
+import           Ouroboros.Network.NodeToNode (ConnectionId (..),
+                     NodeToNodeVersion (..))
 import qualified Ouroboros.Network.NodeToNode.Version as NodeToNode
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server

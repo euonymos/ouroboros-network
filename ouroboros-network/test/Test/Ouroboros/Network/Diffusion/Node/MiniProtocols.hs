@@ -85,24 +85,36 @@ import           Network.TypedProtocol
 
 import qualified Pipes
 
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import qualified Ouroboros.Network.PeerSelection.PeerSharing.Type as PSTypes
+import           Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
+                     peerSharingClient, peerSharingServer)
+import           Ouroboros.Network.Protocol.PeerSharing.Client
+                     (peerSharingClientPeer)
+import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
+import           Ouroboros.Network.Protocol.PeerSharing.Server
+                     (peerSharingServerPeer)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing,
+                     PeerSharingAmount (..))
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 
 -- | Protocol codecs.
 --
-data Codecs block m = Codecs
-  { chainSyncCodec  :: Codec (ChainSync block (Point block) (Tip block))
-                         CBOR.DeserialiseFailure m ByteString
-  , blockFetchCodec :: Codec (BlockFetch block (Point block))
-                         CBOR.DeserialiseFailure m ByteString
-  , keepAliveCodec  :: Codec KeepAlive
-                         CBOR.DeserialiseFailure m ByteString
-  , pingPongCodec   :: Codec PingPong
+data Codecs addr block m = Codecs
+  { chainSyncCodec   :: Codec (ChainSync block (Point block) (Tip block))
+                          CBOR.DeserialiseFailure m ByteString
+  , blockFetchCodec  :: Codec (BlockFetch block (Point block))
+                          CBOR.DeserialiseFailure m ByteString
+  , keepAliveCodec   :: Codec KeepAlive
+                          CBOR.DeserialiseFailure m ByteString
+  , pingPongCodec    :: Codec PingPong
+                          CBOR.DeserialiseFailure m ByteString
+  , peerSharingCodec :: Codec (PeerSharing addr)
                          CBOR.DeserialiseFailure m ByteString
   }
 
-cborCodecs :: MonadST m => Codecs Block m
+cborCodecs :: MonadST m => Codecs NtNAddr Block m
 cborCodecs = Codecs
   { chainSyncCodec = codecChainSync Serialise.encode Serialise.decode
                                     Serialise.encode Serialise.decode
@@ -112,6 +124,7 @@ cborCodecs = Codecs
                                       Serialise.encode Serialise.decode
   , keepAliveCodec = codecKeepAlive_v2
   , pingPongCodec  = codecPingPong
+  , peerSharingCodec  = codecPeerSharing encodeNtNAddr decodeNtNAddr
   }
 
 
@@ -154,9 +167,17 @@ data LimitsAndTimeouts block = LimitsAndTimeouts
   , handshakeLimits
       :: MiniProtocolLimits
   , handshakeTimeLimits
-      :: ProtocolSizeLimits (Handshake NtNVersion NtNVersionData) ByteString
-  , handhsakeSizeLimits
       :: ProtocolTimeLimits (Handshake NtNVersion NtNVersionData)
+  , handhsakeSizeLimits
+      :: ProtocolSizeLimits (Handshake NtNVersion NtNVersionData) ByteString
+
+    -- peer sharing
+  , peerSharingLimits
+      :: MiniProtocolLimits
+  , peerSharingTimeLimits
+      :: ProtocolTimeLimits (PeerSharing NtNAddr)
+  , peerSharingSizeLimits
+      :: ProtocolSizeLimits (PeerSharing NtNAddr) ByteString
   }
 
 
@@ -184,6 +205,7 @@ applications :: forall block header m.
                 ( MonadAsync m
                 , MonadFork  m
                 , MonadMask  m
+                , MonadMVar  m
                 , MonadSay   m
                 , MonadThrow m
                 , MonadTime  m
@@ -197,7 +219,7 @@ applications :: forall block header m.
                 )
              => Tracer m String
              -> NodeKernel header block m
-             -> Codecs block m
+             -> Codecs NtNAddr block m
              -> LimitsAndTimeouts block
              -> AppArgs m
              -> Diff.Applications NtNAddr NtNVersion NtNVersionData
@@ -205,7 +227,9 @@ applications :: forall block header m.
                                   m ()
 applications debugTracer nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
-                    , keepAliveCodec, pingPongCodec }
+                    , keepAliveCodec, pingPongCodec
+                    , peerSharingCodec
+                    }
              limits
              AppArgs
                { aaLedgerPeersConsensusInterface
@@ -220,10 +244,10 @@ applications debugTracer nodeKernel
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData InitiatorOnlyDiffusionMode aaPeerSharing)
                                   initiatorApp
-      , Diff.daApplicationInitiatorResponderMode =
+      , Diff.daApplicationInitiatorResponderMode = \computePeers ->
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData aaDiffusionMode aaPeerSharing)
-                                  initiatorAndResponderApp
+                                  (initiatorAndResponderApp computePeers)
       , Diff.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
@@ -232,10 +256,10 @@ applications debugTracer nodeKernel
           aaLedgerPeersConsensusInterface
       }
   where
-    -- TODO: initiator app can be derived from 'initiatorAndResponderApp'
     initiatorApp
       :: OuroborosBundle InitiatorMode NtNAddr ByteString m () Void
-    initiatorApp = (fmap (fmap (fmap f))) <$> initiatorAndResponderApp
+    -- initiator mode will never run a peer sharing responder side
+    initiatorApp = (fmap (fmap (fmap f))) <$> initiatorAndResponderApp (error "impossible happened!")
       where
         f :: MiniProtocol InitiatorResponderMode ByteString m () ()
           -> MiniProtocol InitiatorMode          ByteString m () Void
@@ -251,8 +275,10 @@ applications debugTracer nodeKernel
                        }
 
     initiatorAndResponderApp
-      :: OuroborosBundle InitiatorResponderMode NtNAddr ByteString m () ()
-    initiatorAndResponderApp = TemperatureBundle
+      :: (PeerSharingAmount -> m [NtNAddr])
+      -- ^ Peer Sharing result computation callback
+      -> OuroborosBundle InitiatorResponderMode NtNAddr ByteString m () ()
+    initiatorAndResponderApp computePeers = TemperatureBundle
       { withHot = WithHot $ \ connId controlMessageSTM ->
           [ MiniProtocol
               { miniProtocolNum    = MiniProtocolNum 2
@@ -289,6 +315,14 @@ applications debugTracer nodeKernel
                   InitiatorAndResponderProtocol
                     (keepAliveInitiator connId controlMessageSTM)
                     keepAliveResponder
+              }
+          , MiniProtocol
+              { miniProtocolNum    = MiniProtocolNum 12
+              , miniProtocolLimits = peerSharingLimits limits
+              , miniProtocolRun    =
+                  InitiatorAndResponderProtocol
+                    (peerSharingInitiator controlMessageSTM (remoteAddress connId))
+                    (peerSharingResponder computePeers)
               }
           ]
       }
@@ -473,6 +507,37 @@ applications debugTracer nodeKernel
         channel
         (pingPongServerPeer pingPongServerStandard)
 
+
+    peerSharingInitiator
+      :: ControlMessageSTM m
+      -> NtNAddr
+      -> MuxPeer ByteString m ()
+    peerSharingInitiator controlMessageSTM them = MuxPeerRaw $ \channel -> do
+      labelThisThread "PeerSharingClient"
+      bracketPeerSharingClient (nkPeerSharingRegistry nodeKernel) them
+        $ \controller -> do
+          psClient <- peerSharingClient controlMessageSTM controller
+          runPeerWithLimits
+            nullTracer
+            peerSharingCodec
+            (peerSharingSizeLimits limits)
+            (peerSharingTimeLimits limits)
+            channel
+            (peerSharingClientPeer psClient)
+
+    peerSharingResponder
+      :: (PeerSharingAmount -> m [NtNAddr])
+      -> MuxPeer ByteString m ()
+    peerSharingResponder f = MuxPeerRaw $ \channel -> do
+      labelThisThread "PeerSharingServer"
+      runPeerWithLimits
+        nullTracer
+        peerSharingCodec
+        (peerSharingSizeLimits limits)
+        (peerSharingTimeLimits limits)
+        channel
+        $ peerSharingServerPeer
+        $ peerSharingServer f
 
 
 --

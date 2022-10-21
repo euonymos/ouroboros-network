@@ -22,7 +22,6 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (ClientHasAgency (..), Message (..), PeerSharing,
                      ServerHasAgency (..))
 
-import qualified Cardano.Binary as CBOR
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Ouroboros.Network.Protocol.Limits
 
@@ -62,7 +61,7 @@ codecPeerSharing encodeAddress decodeAddress = mkCodecCborLazyBS encodeMsg decod
                                   <$> CBOR.decode
         (ServerAgency TokBusy, 1) -> SomeMessage
                                   . MsgSharePeers
-                                  <$> CBOR.decodeListWith decodeAddress
+                                  <$> decodeListWith decodeAddress
         (ClientAgency TokIdle, 2) -> return
                                   $ SomeMessage
                                     MsgDone
@@ -72,12 +71,21 @@ codecPeerSharing encodeAddress decodeAddress = mkCodecCborLazyBS encodeMsg decod
         (ServerAgency TokBusy, _) ->
           fail ("codecPeerSharing.StBusy: unexpected key: " ++ show key)
 
-    -- Definition as in CBOR.encodeList but indexed by an external encoder
+    -- Definition as in Codec.Serialise.defaultEncodeList but indexed by an
+    -- external encoder
     encodeListWith :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding
     encodeListWith _   [] = CBOR.encodeListLen 0
     encodeListWith enc xs = CBOR.encodeListLenIndef
                          <> foldr (\x r -> enc x <> r) CBOR.encodeBreak xs
 
+    -- Definition as in Codec.Serialise.defaultDecodeList but indexed by an
+    -- external encoder
+    decodeListWith :: CBOR.Decoder s a -> CBOR.Decoder s [a]
+    decodeListWith dec= do
+        mn <- CBOR.decodeListLenOrIndef
+        case mn of
+          Nothing -> CBOR.decodeSequenceLenIndef (flip (:)) [] reverse   dec
+          Just n  -> CBOR.decodeSequenceLenN     (flip (:)) [] reverse n dec
 
 codecPeerSharingId
   :: forall peerAddress m.

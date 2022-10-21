@@ -44,6 +44,7 @@ library
                        Ouroboros.Network.Diffusion.Policies
                        Ouroboros.Network.ExitPolicy
                        Ouroboros.Network.KeepAlive
+                       Ouroboros.Network.PeerSharing
                        Ouroboros.Network.NodeToNode
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Tracers

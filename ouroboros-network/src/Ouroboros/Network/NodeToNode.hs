@@ -96,6 +96,7 @@ module Ouroboros.Network.NodeToNode
   , blockFetchMiniProtocolNum
   , txSubmissionMiniProtocolNum
   , keepAliveMiniProtocolNum
+  , peerSharingMiniProtocolNum
   ) where
 
 import qualified Control.Concurrent.Async as Async
@@ -173,7 +174,11 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
 
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol    :: RunMiniProtocol appType bytes m a b
+    keepAliveProtocol    :: RunMiniProtocol appType bytes m a b,
+
+    -- | peer sharing mini-protocol
+    --
+    peerSharingProtocol  :: RunMiniProtocol appType bytes m a b
 
   }
 
@@ -264,11 +269,16 @@ nodeToNodeProtocols miniProtocolParameters protocols _version =
       -- Established protocols: 'keep-alive'.
       (WithEstablished $ \connectionId controlMessageSTM ->
         case protocols connectionId controlMessageSTM of
-          NodeToNodeProtocols { keepAliveProtocol } ->
+          NodeToNodeProtocols { keepAliveProtocol, peerSharingProtocol } ->
             [ MiniProtocol {
                 miniProtocolNum    = MiniProtocolNum 8,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = keepAliveProtocol
+              }
+            , MiniProtocol {
+                miniProtocolNum    = MiniProtocolNum 12,
+                miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
+                miniProtocolRun    = peerSharingProtocol
               }
             ])
 
@@ -278,7 +288,8 @@ addSafetyMargin x = x + x `div` 10
 chainSyncProtocolLimits
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
-  , keepAliveProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
+  , keepAliveProtocolLimits
+  , peerSharingProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
 
 chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
   MiniProtocolLimits {
@@ -384,6 +395,17 @@ keepAliveProtocolLimits _ =
       maximumIngressQueue = addSafetyMargin 1280
     }
 
+peerSharingProtocolLimits _ =
+  MiniProtocolLimits {
+  -- This protocol does not need to be pipelined and a peer can only ask
+  -- for a maximum of 255 peers each time. Hence a reply can have up to
+  -- 255 IP (IPv4 or IPv6) addresses so 255 * 16 = 4080. TCP has an initial
+  -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
+  -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
+  -- queue to be a single RTT should be enough to cover for CBOR overhead.
+  maximumIngressQueue = 4 * 1440
+  }
+
 chainSyncMiniProtocolNum :: MiniProtocolNum
 chainSyncMiniProtocolNum = MiniProtocolNum 2
 
@@ -395,6 +417,9 @@ txSubmissionMiniProtocolNum = MiniProtocolNum 4
 
 keepAliveMiniProtocolNum :: MiniProtocolNum
 keepAliveMiniProtocolNum = MiniProtocolNum 8
+
+peerSharingMiniProtocolNum :: MiniProtocolNum
+peerSharingMiniProtocolNum = MiniProtocolNum 12
 
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --

@@ -72,7 +72,8 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
 import           Ouroboros.Network.ControlMessage (ControlMessage (..),
                      ControlMessageSTM)
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..), ConnectionId (..))
+import           Ouroboros.Network.NodeToNode (ConnectionId (..),
+                     MiniProtocolParameters (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
@@ -120,6 +121,8 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
 
+import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import           Test.Util.ChainDB
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (MockFS)
@@ -282,6 +285,7 @@ runThreadNetwork :: forall m blk.
                     ( IOLike m
                     , MonadTime m
                     , MonadTimer m
+                    , MonadMVar m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
@@ -1013,7 +1017,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
                      , mustReplyTimeout = waitForever
                      })
                   nullMetric
-                  (NTN.mkHandlers nodeKernelArgs nodeKernel)
+                  -- The purpose of this test is not testing protocols, so
+                  -- returning constant empty list is fine if we have thorough
+                  -- tests about the peer sharing protocol itself.
+                  (NTN.mkHandlers nodeKernelArgs nodeKernel (\_ -> return []))
 
       -- In practice, a robust wallet/user can persistently add a transaction
       -- until it appears on the chain. This thread adds robustness for the
@@ -1059,13 +1066,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
     customNodeToNodeCodecs
       :: TopLevelConfig blk
       -> NodeToNodeVersion
-      -> NTN.Codecs blk CodecError m
+      -> NTN.Codecs blk NodeId CodecError m
            Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
            (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
            (AnyMessage KeepAlive)
+           (AnyMessage (PeerSharing NodeId))
     customNodeToNodeCodecs cfg ntnVersion = NTN.Codecs
         { cChainSyncCodec =
             mapFailureCodec (CodecBytesFailure "ChainSync") $
@@ -1085,9 +1093,12 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cKeepAliveCodec =
             mapFailureCodec CodecIdFailure $
               NTN.cKeepAliveCodec NTN.identityCodecs
+        , cPeerSharingCodec =
+            mapFailureCodec CodecIdFailure $
+              NTN.cPeerSharingCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion ntnVersion
+        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion encodeNodeId decodeNodeId ntnVersion
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
@@ -1329,7 +1340,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           _ -> pure ()
       where
         codec =
-            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion version
+            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion encodeNodeId decodeNodeId version
 
 -- | Variant of 'createConnectChannels' with intermediate queues for
 -- delayed-but-in-order messages
@@ -1618,6 +1629,7 @@ type LimitedApp' m addr blk =
         Lazy.ByteString
         (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
         (AnyMessage KeepAlive)
+        (AnyMessage (PeerSharing addr))
         NodeToNodeInitiatorResult ()
 
 {-------------------------------------------------------------------------------

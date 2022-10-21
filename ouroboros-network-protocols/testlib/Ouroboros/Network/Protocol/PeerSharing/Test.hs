@@ -8,7 +8,8 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Test where
 
-import qualified Codec.Serialise as CBOR
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
@@ -107,7 +108,7 @@ prop_channel :: ( MonadST    m
 prop_channel l = do
     (s, _) <- runConnectedPeers createConnectedChannels
                                 nullTracer
-                                (codecPeerSharing CBOR.encode CBOR.decode)
+                                (codecPeerSharing CBOR.encodeInt CBOR.decodeInt)
                                 client server
     let compute = foldl' (\(x, r) amount
                            -> (x + 1, replicate (fromIntegral amount) x ++ r))
@@ -134,7 +135,7 @@ prop_channel_IO l =
 
 instance Arbitrary peer => Arbitrary (AnyMessageAndAgency (PeerSharing peer)) where
   arbitrary = do
-    amount <- arbitrary
+    amount <- PeerSharingAmount <$> arbitrary
     resp <- arbitrary
     oneof
       [ pure $ AnyMessageAndAgency (ClientAgency TokIdle) (MsgShareRequest amount)
@@ -151,28 +152,28 @@ instance Eq peer => Eq (AnyMessage (PeerSharing peer)) where
 prop_codec :: AnyMessageAndAgency (PeerSharing Int)
            -> Bool
 prop_codec msg =
-  runST (prop_codecM (codecPeerSharing CBOR.encode CBOR.decode) msg)
+  runST (prop_codecM (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
 prop_codec_cbor
   :: AnyMessageAndAgency (PeerSharing Int)
   -> Bool
 prop_codec_cbor msg =
-  runST (prop_codec_cborM (codecPeerSharing CBOR.encode CBOR.decode) msg)
+  runST (prop_codec_cborM (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
 prop_codec_valid_cbor :: AnyMessageAndAgency (PeerSharing Int) -> Property
-prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codecPeerSharing CBOR.encode CBOR.decode)
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codecPeerSharing CBOR.encodeInt CBOR.decodeInt)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
 prop_codec_splits2 :: AnyMessageAndAgency (PeerSharing Int) -> Bool
 prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 (codecPeerSharing CBOR.encode CBOR.decode) msg)
+  runST (prop_codec_splitsM splits2 (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
 prop_codec_splits3 :: AnyMessageAndAgency (PeerSharing Int) -> Bool
 prop_codec_splits3 msg =
-  runST (prop_codec_splitsM splits3 (codecPeerSharing CBOR.encode CBOR.decode) msg)
+  runST (prop_codec_splitsM splits3 (codecPeerSharing CBOR.encodeInt CBOR.decodeInt) msg)
 
 prop_byteLimits :: AnyMessageAndAgency (PeerSharing Int)
                 -> Bool
@@ -180,6 +181,6 @@ prop_byteLimits (AnyMessageAndAgency agency msg) =
         dataSize (encode agency msg)
      <= sizeLimitForState agency
   where
-    Codec { encode } = codecPeerSharing @IO (CBOR.encode @Int) (CBOR.decode @Int)
+    Codec { encode } = codecPeerSharing @IO CBOR.encodeInt CBOR.decodeInt
     ProtocolSizeLimits { sizeLimitForState, dataSize } =
       byteLimitsPeerSharing (fromIntegral . BL.length)

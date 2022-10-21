@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -14,7 +13,7 @@
 module Ouroboros.Consensus.Util.Orphans () where
 
 import           Codec.CBOR.Decoding (Decoder)
-import           Codec.Serialise (Serialise (..))
+import           Codec.Serialise.Class (Serialise (..))
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
