@@ -195,10 +195,6 @@ executable cardano-ping
                        network,
                        tdigest,
                        text
-  if os(windows)
-    buildable:         False
-  else
-    buildable:         True
 
   ghc-options:         -threaded
                        -Wall
