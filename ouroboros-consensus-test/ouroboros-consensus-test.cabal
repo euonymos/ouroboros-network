@@ -160,6 +160,7 @@ test-suite test-consensus
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
+                       Test.Consensus.Mempool.StateMachine
                        Test.Consensus.Node
                        Test.Consensus.ResourceRegistry
                        Test.Consensus.Util.MonadSTM.RAWLock
@@ -189,6 +190,7 @@ test-suite test-consensus
                      , tasty-quickcheck
                      , temporary
                      , time
+                     , anti-diff
                      , transformers
                      , tree-diff
 

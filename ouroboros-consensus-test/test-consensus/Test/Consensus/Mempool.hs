@@ -11,7 +11,16 @@
 {-# LANGUAGE TupleSections       #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Test.Consensus.Mempool (tests) where
+module Test.Consensus.Mempool (
+    tests
+    -- * Exported for other tests
+  , TestBlock
+  , applyTxToLedger
+  , genTxs
+  , genValidTxs
+  , testInitLedger
+  , testLedgerConfig
+  ) where
 
 import           Control.Exception (assert)
 import           Control.Monad (foldM, forM, forM_, void)
@@ -46,12 +55,15 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsMempool as SM
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Storage.ChainDB (PointNotFound (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
+
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
                      safeMaximumOn)
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -59,9 +71,6 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck (elements)
-import Ouroboros.Consensus.Storage.ChainDB (PointNotFound(..))
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-
 tests :: TestTree
 tests = testGroup "Mempool"
   [ testGroup "TxSeq"
