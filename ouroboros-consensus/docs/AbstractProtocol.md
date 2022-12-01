@@ -42,19 +42,28 @@ flowchart LR;
   click ApplyTxErr "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/SupportsMemPool.hs"
   LedgerState-.->Ledger
   Ledger-->AuxLedgerEvent[AuxLedgerEvent l]; class AuxLedgerEvent tf
+  click AuxLedgerEvent "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Basics.hs"
   Ledger-->LedgerErr[LedgerErr l]; class LedgerErr tf
+  click LedgerErr "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Basics.hs"
 
   Protocol(Protocol); class Protocol kind
-  ConsensusConfig; class ConsensusConfig df
-  Protocol-->ConsensusConfig[ConsensusConfig p];
+  Protocol-->ConsensusConfig[ConsensusConfig p]; class ConsensusConfig df
+  click ConsensusConfig "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
   subgraph ConsensusProtocol[class ConsensusProtocol]
     ChainDepState[ChainDepState p]; class ChainDepState tf
+    click ChainDepState "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
     IsLeader[IsLeader p]; class IsLeader tf
+    click IsLeader "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
     CanBeLeader[CanBeLeader p]; class CanBeLeader tf
+    click CanBeLeader "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
     SelectView[SelectView p]; class SelectView tf
+    click SelectView "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
     LedgerView[LedgerView p]; class LedgerView tf
+    click LedgerView "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
     ValidationErr[ValidationErr p]; class ValidationErr tf
+    click ValidationErr "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
     ValidateView[ValidateView p]; class ValidateView tf
+    click ValidateView "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Protocol/Abstract.hs"
   end
   Protocol-->ChainDepState
   Protocol-->IsLeader[IsLeader p]
