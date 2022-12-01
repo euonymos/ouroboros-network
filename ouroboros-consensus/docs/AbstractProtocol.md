@@ -1,13 +1,15 @@
-```mermaid
-graph TB
-  classDef df fill:#4285F4;
-  classDef tf fill:#34A853;
-  classDef kind fill:#EA4335;
+# Abstract Protocol
 
-  Concept[Concept or kind]; class Concept kind;
-  DF[Data family]; class DF df;
-  TF[Type family]; class TF tf;
-```
+The following diagram depicts the relation between various constructs in the
+abstract specification of the protocol and the consensus-level view of th
+ledger.
+- Red boxes indicate concepts, or informal kinds (e.g., `ShelleyLedgerState`
+  would have the informal kind `Ledger`).
+- Blue boxes indicate data families.
+- Green boxes indicate type families.
+- Type or data families map the block attached to the incoming arrow to the
+  block attached to the outgoing arrow. When there is no outgoing arrow, the
+  family maps to any type (e.g., `BlockConfig blk`).
 
 ```mermaid
 flowchart LR;
