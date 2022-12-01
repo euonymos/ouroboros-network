@@ -25,9 +25,9 @@ flowchart LR;
   click BlockConfig "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Block/Abstract.hs"
   Block-->StorageConfig; class StorageConfig df
   click StorageConfig "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Block/Abstract.hs"
-  Block-->CodecConfig; class CodecConfig df
+  Block-->CodecConfig[CodecConfig blk]; class CodecConfig df
   click CodecConfig "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Block/Abstract.hs"
-  Block-->Header; class Header df
+  Block-->Header[Header blk]; class Header df
   click Header "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Block/Abstract.hs"
   Ledger(Ledger); class Ledger kind
   click Ledger "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Abstract.hs"
@@ -36,9 +36,8 @@ flowchart LR;
 
   Block-->GenTx[GenTx blk]; class GenTx df
   click GenTx "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/SupportsMemPool.hs"
-  Block-->ApplyTxErr[GenTx blk]; class ApplyTxErr df
+  Block-->ApplyTxErr[ApplyTxErr blk]; class ApplyTxErr df
   click ApplyTxErr "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/SupportsMemPool.hs"
-  Block-->ApplyTxErr[GenTx blk]; class ApplyTxErr df
   LedgerState-.->Ledger
   Ledger-->AuxLedgerEvent[AuxLedgerEvent l]; class AuxLedgerEvent tf
   Ledger-->LedgerErr[LedgerErr l]; class LedgerErr tf
