@@ -4,9 +4,9 @@
 
 ### Overview
 
-- [Ouroboros.Consensus.Tutorial.Simple](../src-docs/Ouroboros/Consensus/Tutorial/Simple.lhs):
+- [Ouroboros.Consensus.Tutorial.Simple](tutorials/Ouroboros/Consensus/Tutorial/Simple.lhs):
   Simple round-robin instantiation of the abstract Ouroboros consensus protocol.
-- [Ouroboros.Consensus.Tutorial.WithEpoch](../src-docs/Ouroboros/Consensus/Tutorial/WithEpoch.lhs):
+- [Ouroboros.Consensus.Tutorial.WithEpoch](tutorials/Ouroboros/Consensus/Tutorial/WithEpoch.lhs):
   Example in which the leader schedule depends on data from the chain.
 
 ### Generating documents

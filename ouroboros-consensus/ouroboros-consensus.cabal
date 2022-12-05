@@ -342,8 +342,8 @@ library
     cpp-options:       -DENABLE_ASSERTIONS
 
 
-library src-docs
-  hs-source-dirs:      src-docs
+library tutorials
+  hs-source-dirs:      docs/tutorials
   other-modules:       Ouroboros.Consensus.Tutorial.Simple
                      , Ouroboros.Consensus.Tutorial.WithEpoch
 
