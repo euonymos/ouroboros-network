@@ -25,7 +25,7 @@ import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..),
 
 import           Control.Tracer (Tracer)
 
-import           Control.Monad.Class.MonadTime (Time (..))
+import           Control.Monad.Class.MonadTime.SI (Time (..))
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 

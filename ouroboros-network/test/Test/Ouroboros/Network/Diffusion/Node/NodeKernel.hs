@@ -32,8 +32,8 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Coerce (coerce)
 import           Data.Hashable (Hashable)

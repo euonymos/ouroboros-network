@@ -76,7 +76,7 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Exception (ErrorCall, IOException)
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 
 import qualified Codec.CBOR.Term as CBOR
 import qualified Data.ByteString.Lazy as BL

@@ -32,7 +32,8 @@ module Ouroboros.Consensus.Util.IOLike (
   , addTime
   , diffTime
     -- *** MonadDelay
-  , MonadDelay (..)
+  , MonadDelay
+  , threadDelay
     -- *** MonadEventlog
   , MonadEventlog (..)
     -- *** MonadEvaluate
@@ -51,8 +52,8 @@ import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime hiding (MonadTime (..))
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI hiding (MonadTime (..))
+import           Control.Monad.Class.MonadTimer.SI
 
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -68,6 +69,7 @@ class ( MonadAsync              m
       , MonadFork               m
       , MonadST                 m
       , MonadDelay              m
+      , MonadTimeout            m
       , MonadThread             m
       , MonadThrow              m
       , MonadCatch              m

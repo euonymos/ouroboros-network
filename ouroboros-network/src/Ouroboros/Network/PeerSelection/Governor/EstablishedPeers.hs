@@ -15,7 +15,7 @@ import qualified Data.Set as Set
 import           Control.Concurrent.JobPool (Job (..))
 import           Control.Exception (SomeException)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers

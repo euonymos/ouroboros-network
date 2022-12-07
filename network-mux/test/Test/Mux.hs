@@ -40,8 +40,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer
 
@@ -983,7 +983,6 @@ encodeInvalidMuxSDU sdu =
 --
 prop_demux_sdu :: forall m.
                     ( MonadAsync m
-                    , MonadFork m
                     , MonadLabelledSTM m
                     , MonadMask m
                     , MonadSay m
@@ -1292,7 +1291,6 @@ triggerApp bearer app = do
 
 prop_mux_start_mX :: forall m.
                        ( MonadAsync m
-                       , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
@@ -1338,7 +1336,6 @@ prop_mux_start_mX apps runTime = do
 
 prop_mux_restart_m :: forall m.
                        ( MonadAsync m
-                       , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
@@ -1488,7 +1485,6 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
 
 prop_mux_start_m :: forall m.
                        ( MonadAsync m
-                       , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
@@ -1646,6 +1642,7 @@ instance (Show a) => Show (WithThreadAndTime a) where
 
 verboseTracer :: forall a m.
                        ( MonadAsync m
+                       , MonadMonotonicTime m
                        , MonadSay m
                        , MonadTime m
                        , Show a
@@ -1655,6 +1652,7 @@ verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
+                       , MonadMonotonicTime m
                        , MonadTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
@@ -1703,7 +1701,6 @@ withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
 close_experiment
     :: forall sock acc req resp m.
        ( MonadAsync       m
-       , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
        , MonadTime        m

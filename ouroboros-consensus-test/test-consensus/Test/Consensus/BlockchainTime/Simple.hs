@@ -21,16 +21,20 @@ import           Data.Fixed
 import qualified Data.Time.Clock as Time
 import           NoThunks.Class (AllowThunk (..))
 import           Test.QuickCheck hiding (Fixed)
-import           Test.Tasty hiding (after)
+import           Test.Tasty hiding (Timeout, after)
 import           Test.Tasty.QuickCheck hiding (Fixed)
 
 import qualified Control.Monad.Class.MonadSTM.Internal as LazySTM
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer (MonadDelay (..))
+import           Control.Monad.Class.MonadTimer.NonStandard
 import           Control.Monad.IOSim
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.IOLike hiding (MonadDelay,
+                     threadDelay)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (withWatcher)
 import           Ouroboros.Consensus.Util.Time
@@ -337,12 +341,23 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadCatch
            , MonadMask
            , MonadMonotonicTime
+           , MonadMonotonicTimeNSec
            , MonadTime
            , MonadThread
            , MonadFork
            , MonadST
            , MonadEvaluate
            )
+
+instance MonadTimeout m => MonadTimeout (OverrideDelay m) where
+  newtype Timeout (OverrideDelay m) = OverrideDelayTimeout {
+      getOverrideDelayTimeout :: Timeout m
+    }
+  newTimeout    = fmap OverrideDelayTimeout
+                . OverrideDelay    . lift  .   newTimeout
+  readTimeout   = OverrideDelaySTM . lift  .   readTimeout   . getOverrideDelayTimeout
+  updateTimeout = (OverrideDelay   . lift) .: (updateTimeout . getOverrideDelayTimeout)
+  cancelTimeout = OverrideDelay    . lift  .   cancelTimeout . getOverrideDelayTimeout
 
 deriving via AllowThunk (OverrideDelay s a)
          instance NoThunks (OverrideDelay s a)

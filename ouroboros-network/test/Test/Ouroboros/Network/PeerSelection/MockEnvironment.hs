@@ -45,8 +45,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import qualified Control.Monad.Fail as Fail
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, traceWith)

@@ -51,7 +51,7 @@ import           Control.Applicative (Alternative)
 import           Control.Concurrent.JobPool (Job)
 import           Control.Exception (SomeException, assert)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           System.Random (StdGen)
 
 import           Ouroboros.Network.ExitPolicy

@@ -30,11 +30,10 @@ module Ouroboros.Network.Driver.Limits
 import           Data.Maybe (fromMaybe)
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), traceWith)
 
 import           Network.Mux.Timeout
@@ -149,10 +148,8 @@ runDecoderWithLimit limit size Channel{recv} =
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadAsync m
-     , MonadFork m
      , MonadMask m
      , MonadThrow (STM m)
-     , MonadMonotonicTime m
      , MonadTimer m
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')
@@ -182,10 +179,8 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
 runPipelinedPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
-     , MonadFork m
      , MonadMask m
      , MonadThrow (STM m)
-     , MonadMonotonicTime m
      , MonadTimer m
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')

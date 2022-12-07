@@ -35,8 +35,8 @@ import           Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.ByteString.Lazy (ByteString)
@@ -535,7 +535,6 @@ runM
        ( MonadAsync       m
        , MonadEvaluate    m
        , MonadFix         m
-       , MonadFork        m
        , MonadLabelledSTM m
        , MonadTraceSTM    m
        , MonadMask        m

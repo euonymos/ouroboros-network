@@ -33,11 +33,14 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Internal
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.NonStandard
 
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
-                     MonadMonotonicTime (..), StrictMVar, StrictTVar)
+import           Ouroboros.Consensus.Util.IOLike (IOLike (..), StrictMVar,
+                     StrictTVar)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -238,11 +241,21 @@ instance MonadST m => MonadST (WithEarlyExit m) where
       lowerLiftST :: (forall s. Proxy s -> (forall a. ST s a -> m a) -> b) -> b
       lowerLiftST g = withLiftST $ g Proxy
 
+instance MonadMonotonicTimeNSec m => MonadMonotonicTimeNSec (WithEarlyExit m) where
+  getMonotonicTimeNSec = lift getMonotonicTimeNSec
+
 instance MonadMonotonicTime m => MonadMonotonicTime (WithEarlyExit m) where
   getMonotonicTime = lift getMonotonicTime
 
 instance MonadDelay m => MonadDelay (WithEarlyExit m) where
   threadDelay = lift . threadDelay
+
+instance MonadTimeout m => MonadTimeout (WithEarlyExit m) where
+  newtype Timeout (WithEarlyExit m) = EarlyExitTimeout { getEarlyExitTimeout :: Timeout m }
+  newTimeout    = fmap EarlyExitTimeout . lift . newTimeout
+  readTimeout   = lift .   readTimeout   . getEarlyExitTimeout
+  updateTimeout = lift .: (updateTimeout . getEarlyExitTimeout)
+  cancelTimeout = lift .   cancelTimeout . getEarlyExitTimeout
 
 instance (MonadEvaluate m, MonadCatch m) => MonadEvaluate (WithEarlyExit m) where
   evaluate  = lift . evaluate

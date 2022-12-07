@@ -95,8 +95,9 @@ library
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
 
-                       io-classes       ^>=0.3,
+                       io-classes       ^>=0.4,
                        ouroboros-network-api,
+                       si-timers,
                        typed-protocols   >=0.1 && <1.0,
                        typed-protocols-cborg
                                          >=0.1 && <1.0
@@ -169,6 +170,7 @@ library testlib
                        ouroboros-network-framework,
                        ouroboros-network-mock,
                        ouroboros-network-protocols,
+                       si-timers,
                        strict-stm,
                        typed-protocols
 

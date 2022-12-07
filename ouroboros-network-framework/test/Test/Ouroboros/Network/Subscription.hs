@@ -18,8 +18,8 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
 import qualified Data.ByteString.Char8 as BSC
@@ -142,7 +142,7 @@ data LookupResultIO = LookupResultIO {
     , lrioValency    :: !Int
     }
 
-mockResolver :: forall m. (MonadTimer m) => LookupResult -> Resolver m
+mockResolver :: forall m. MonadTimer m => LookupResult -> Resolver m
 mockResolver lr = Resolver lA lAAAA
    where
     lA :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])

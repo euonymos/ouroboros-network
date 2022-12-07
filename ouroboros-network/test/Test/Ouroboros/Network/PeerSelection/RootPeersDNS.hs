@@ -44,9 +44,9 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime (Time (..))
-import           Control.Monad.Class.MonadTimer
-import qualified Control.Monad.Class.MonadTimer as MonadTimer
+import           Control.Monad.Class.MonadTime.SI (Time (..))
+import           Control.Monad.Class.MonadTimer.SI
+import qualified Control.Monad.Class.MonadTimer.SI as MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 

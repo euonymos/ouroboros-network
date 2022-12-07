@@ -15,8 +15,8 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson hiding (Options, json)
 import           Data.Bits (clearBit, setBit, testBit)

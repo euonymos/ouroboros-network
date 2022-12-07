@@ -29,9 +29,10 @@ import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer (MonadTimer, registerDelay)
-import qualified Control.Monad.Class.MonadTimer as MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI (MonadTimeout, MonadTimer,
+                     registerDelay)
+import qualified Control.Monad.Class.MonadTimer.SI as MonadTimer
 
 
 -- | The type of the 'System.Timeout.timeout' function.
@@ -111,7 +112,7 @@ withTimeoutSerialNative body = body MonadTimer.timeout
 --
 withTimeoutSerialAlternative
   :: forall m b. (MonadAsync m, MonadFork m,
-                  MonadMonotonicTime m, MonadTimer m,
+                  MonadMonotonicTime m, MonadTimeout m, MonadTimer m,
                   MonadMask m, MonadThrow (STM m))
   => (TimeoutFn m -> m b) -> m b
 withTimeoutSerialAlternative body = do
@@ -305,8 +306,8 @@ timeout monitorState delay action =
 
 
 monitoringThread :: (MonadFork m, MonadSTM m,
-                     MonadMonotonicTime m, MonadTimer m,
-                     MonadThrow (STM m))
+                     MonadMonotonicTime m, MonadTimeout m,
+                     MonadTimer m, MonadThrow (STM m))
                  => MonitorState m -> m ()
 monitoringThread monitorState@MonitorState{deadlineResetVar} = do
   threadId <- myThreadId

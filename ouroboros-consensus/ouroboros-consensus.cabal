@@ -314,12 +314,13 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
-                     , io-classes       ^>=0.3
+                     , io-classes       ^>=0.4
                      , typed-protocols
                      , ouroboros-network-api
                      , ouroboros-network-mock
                      , ouroboros-network-protocols ^>=0.2
-                     , strict-stm       ^>=0.2
+                     , si-timers
+                     , strict-stm
 
 
   if os(windows)

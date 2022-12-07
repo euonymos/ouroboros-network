@@ -34,7 +34,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           Control.Exception (assert)
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 
 data EstablishedPeers peeraddr peerconn = EstablishedPeers {

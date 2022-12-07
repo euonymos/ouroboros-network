@@ -86,7 +86,8 @@ library
                      , text
                      , time
 
-                     , io-classes       ^>=0.3
+                     , io-classes       ^>=0.4
+                     , si-timers
                      , typed-protocols
                      , ouroboros-network-api ^>=0.1
                      , ouroboros-network-framework ^>=0.2

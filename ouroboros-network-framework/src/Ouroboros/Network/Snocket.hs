@@ -35,7 +35,7 @@ module Ouroboros.Network.Snocket
   ) where
 
 import           Control.Exception
-import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime)
 import           Control.Tracer (Tracer)
 import           Data.Bifoldable (Bifoldable (..))
 import           Data.Bifunctor (Bifunctor (..))

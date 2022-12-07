@@ -29,8 +29,8 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime (Time (..))
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI (Time (..))
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 

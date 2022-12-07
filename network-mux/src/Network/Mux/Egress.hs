@@ -18,10 +18,9 @@ import qualified Data.ByteString.Lazy as BL
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import           Network.Mux.Timeout
 import           Network.Mux.Types
@@ -134,7 +133,6 @@ newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
 -- each time it gets to the front of the queue
 muxer
     :: ( MonadAsync m
-       , MonadFork m
        , MonadMask m
        , MonadThrow (STM m)
        , MonadTimer m

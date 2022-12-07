@@ -55,8 +55,8 @@ import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import           Control.Tracer
 
 import           Network.Mux.Channel
@@ -196,7 +196,6 @@ data MuxGroup = MuxJob
 --
 runMux :: forall m mode.
           ( MonadAsync m
-          , MonadFork m
           , MonadLabelledSTM m
           , MonadThrow (STM m)
           , MonadTime  m

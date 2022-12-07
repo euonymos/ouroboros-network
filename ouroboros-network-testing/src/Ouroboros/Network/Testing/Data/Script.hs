@@ -37,7 +37,7 @@ import qualified Data.Set as Set
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,

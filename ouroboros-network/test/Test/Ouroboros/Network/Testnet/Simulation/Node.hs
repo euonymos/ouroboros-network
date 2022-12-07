@@ -36,8 +36,8 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
                      MonadMask, MonadThrow, SomeException)
-import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
-import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
+import           Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime)
+import           Control.Monad.Class.MonadTimer.SI (MonadTimer, threadDelay)
 import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 

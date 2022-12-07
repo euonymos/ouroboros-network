@@ -28,8 +28,8 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
@@ -389,7 +389,6 @@ instance Exception TestError
 mkSnocket :: forall m.
              ( MonadDelay m
              , MonadMask  m
-             , MonadMonotonicTime m
              , MonadSTM   m
              , MonadThrow (STM m)
              )
@@ -584,7 +583,6 @@ data Version = Version DataFlow
 mkConnectionHandler :: forall m handlerTrace.
                        ( MonadLabelledSTM m
                        , MonadCatch       m
-                       , MonadFork        m
                        , MonadTimer       m
                        , MonadFail        m
                        )

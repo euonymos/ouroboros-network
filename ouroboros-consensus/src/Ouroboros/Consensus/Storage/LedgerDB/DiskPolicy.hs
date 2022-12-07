@@ -18,7 +18,7 @@ import           Data.Word
 import           GHC.Generics
 import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
 
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Consensus.Config.SecurityParam
 

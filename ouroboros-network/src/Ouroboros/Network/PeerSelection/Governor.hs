@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -42,8 +43,8 @@ import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), traceWith)
 import           System.Random
 
@@ -530,10 +531,12 @@ peerSelectionGovernorLoop tracer
         Guarded (Just (Min wakeupAt)) decisionAction -> do
           let wakeupIn = diffTime wakeupAt blockedAt
           traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
-          wakupTimeout <- newTimeout wakeupIn
-          let wakeup    = awaitTimeout wakupTimeout >> pure (wakeupDecision st)
+          (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
+          let wakeup    = readTimeout >>= (\case TimeoutPending -> retry
+                                                 _              -> return ())
+                                      >>  pure (wakeupDecision st)
           timedDecision     <- atomically (decisionAction <|> wakeup)
-          cancelTimeout wakupTimeout
+          cancelTimeout
           return timedDecision
 
     guardedDecisions :: Time
@@ -588,7 +591,6 @@ $peer-churn-governor
 --
 peerChurnGovernor :: forall m peeraddr.
                      ( MonadSTM m
-                     , MonadMonotonicTime m
                      , MonadDelay m
                      )
                   => Tracer m (TracePeerSelection peeraddr)

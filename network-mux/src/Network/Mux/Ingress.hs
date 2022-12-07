@@ -19,10 +19,9 @@ import           Text.Printf
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import           Network.Mux.Timeout
 import           Network.Mux.Trace
@@ -97,7 +96,7 @@ data MiniProtocolDispatchInfo m =
 
 -- | demux runs as a single separate thread and reads complete 'MuxSDU's from
 -- the underlying Mux Bearer and forwards it to the matching ingress queue.
-demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
+demuxer :: (MonadAsync m, MonadMask m, MonadThrow (STM m),
             MonadTimer m, MonadTime m)
       => [MiniProtocolState mode m]
       -> MuxBearer m

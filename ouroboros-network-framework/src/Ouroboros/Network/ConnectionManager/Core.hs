@@ -28,10 +28,10 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when, (>=>))
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork, throwTo)
+import           Control.Monad.Class.MonadFork (throwTo)
 import           Control.Monad.Class.MonadThrow hiding (handle)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.Fix
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldMap', traverse_)
@@ -525,15 +525,13 @@ withConnectionManager
     :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version m a.
        ( MonadLabelledSTM   m
        , MonadTraceSTM      m
-       -- 'MonadFork' is only to get access to 'throwTo'
-       , MonadFork          m
        , MonadAsync         m
        , MonadEvaluate      m
        , MonadFix           m
        , MonadMask          m
-       , MonadMonotonicTime m
        , MonadThrow    (STM m)
        , MonadTimer         m
+       -- 'MonadFork' is used to get access to 'throwTo'
 
        , Ord      peerAddr
        , Show     peerAddr

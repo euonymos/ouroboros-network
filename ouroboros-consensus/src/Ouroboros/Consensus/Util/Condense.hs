@@ -25,7 +25,7 @@ import           Data.Word
 import           Numeric.Natural
 import           Text.Printf (printf)
 
-import           Control.Monad.Class.MonadTime (Time (..))
+import           Control.Monad.Class.MonadTime.SI (Time (..))
 
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN, Ed448DSIGN, MockDSIGN,
                      SigDSIGN, SignedDSIGN (..), VerKeyDSIGN,

@@ -39,10 +39,9 @@ import           Control.Applicative ((<|>))
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer
 
 import           Network.Mux (StartOnDemandOrEagerly (..), newMux,
@@ -88,7 +87,6 @@ data RunMiniProtocol (mode :: MuxMode) m a b where
 muxStart
     :: forall m mode a b.
        ( MonadAsync m
-       , MonadFork m
        , MonadLabelledSTM m
        , MonadThrow (STM m)
        , MonadTime  m
