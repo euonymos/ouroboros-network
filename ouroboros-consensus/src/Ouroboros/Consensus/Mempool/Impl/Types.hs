@@ -494,6 +494,8 @@ data TraceEventMempool blk
       TxSeq.MempoolSize
       -- ^ The current size of the Mempool.
 
+    deriving (Generic)
+
 deriving instance ( Eq (GenTx blk)
                   , Eq (Validated (GenTx blk))
                   , Eq (GenTxId blk)

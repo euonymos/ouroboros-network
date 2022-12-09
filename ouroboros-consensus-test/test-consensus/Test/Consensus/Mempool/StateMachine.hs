@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -8,7 +9,9 @@
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
@@ -16,17 +19,17 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
--- |
 
+-- | See 'MakeAtomic'.
 module Test.Consensus.Mempool.StateMachine (tests) where
 
+import           Control.Arrow (first)
 import           Control.Monad (void, when)
 import           Control.Monad.Except (runExcept)
+import           Data.Bool (bool)
 import           Data.Foldable hiding (toList)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.TreeDiff (Expr (..), genericToExpr)
 import qualified Data.TreeDiff.OMap as TD
 import           GHC.Generics
@@ -66,7 +69,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.State
 import           Ouroboros.Consensus.Mock.Ledger.UTxO (Expiry, Tx, TxIn, TxOut)
 
-import           Test.Consensus.Mempool hiding (tests)
+import           Test.Consensus.Mempool.Util (TestBlock, genTxs, testLedgerConfig, testInitLedger, genValidTxs, applyTxToLedger)
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -75,65 +78,92 @@ import           Test.Tasty.QuickCheck
   Datatypes
 -------------------------------------------------------------------------------}
 
+-- | Whether the tip is reachable or not. Isomorphic to Bool
+data IsReachable = IsReachable | IsNotReachable deriving (Generic, ToExpr, NoThunks)
+
+instance Arbitrary IsReachable where
+  arbitrary = bool IsReachable IsNotReachable <$> arbitrary
+
+isReachable :: IsReachable -> Bool
+isReachable IsReachable = True
+isReachable IsNotReachable = False
+
+infixl 9 /&&
+
+(/&&) :: IsReachable -> IsReachable -> IsReachable
+IsNotReachable /&& _ = IsNotReachable
+_ /&& IsNotReachable = IsNotReachable
+_ /&& _ = IsReachable
+
+-- | The model
 data Model blk r = Model {
     -- | The current tip on the mempool
-    modelMempoolTip :: !( TickedLedgerState blk ValuesMK
-                        , Bool -- Should it be reachable on the LedgerDB?
-                        ) -- TODO discuss how it is used
+    modelMempoolIntermediateState :: !(TickedLedgerState blk ValuesMK)
+
+    -- | The base state on top of which the mempool was last synced.
+    --
+    -- Used to make sure we don't generate a state with the same point but
+    -- different utxos.
+  , modelMempoolBaseState :: !(LedgerState blk ValuesMK)
+
+    -- | Whether or not the ledger state on top of which the mempool is synced
+    -- should still be reachable in the ledger db. Whenever we generate a
+    -- 'ChangeLedger' command, we might invalidate the previous mempool tip
+    -- which will become unreachable.
+    --
+    -- This will then trigger a re-sync when adding transactions, but it should
+    -- not do so when getting a snapshot.
+  , modelMempoolBaseStateIsReachable :: !IsReachable
+
     -- | The current tip on the ledgerdb
   , modelLedgerDBTip :: !(LedgerState blk ValuesMK)
+
     -- | The current list of transactions
   , modelTxs :: ![(GenTx blk, TicketNo)]
+
     -- | The maximum capacity of the mempool
-  , modelCapacity :: !MempoolCapacityBytes
-  , modelMempoolWasFilled :: !Bool
-    -- | Seen txs by ticketNo
-  , modelLastTicket :: !TicketNo
-    -- | Seen states
+  , modelRemainingCapacity :: !MempoolCapacityBytes
+
+    -- | Last seen ticket number
     --
-    -- As the point is what is used to identify a ledger state, we don't want it
-    -- to be repeated (or we would need some more logic) -- TODO @js I think
-    -- this can be done so that if the same state is put back, then we remove ti
-    -- in Tips, but who knows.
-  , modelSeenStates :: !(Set (Point blk))
+    -- This indicates how many transactions have ever been added to the mempool.
+  , modelLastSeenTicketNo :: !TicketNo
+
+    -- | Used only for tagging
+  , modelMempoolWasFilled :: !Bool
   }
 
--- | The remaining capacity in a model
-currentRemainingCap ::
-     LedgerSupportsMempool blk
-  => Model blk r
-  -> MempoolCapacityBytes
-currentRemainingCap Model{modelTxs, modelCapacity} =
-    MempoolCapacityBytes
-  $ getMempoolCapacityBytes modelCapacity
-  - sum [ txInBlockSize tx
-        | (tx, _) <- modelTxs
-        ]
+-- | The commands used by QSM
+--
+-- We divide them in 'Action' which are the ones that we on purpose perform on
+-- the mempool, and 'Event's which happen by external triggers. This is a mere
+-- convenience, in the eyes of QSM they are the same thing.
+data Command blk r =
+    Action !(Action blk r)
+  | Event  !(Event blk r)
+  deriving (Generic1)
+  deriving (Rank2.Functor, Rank2.Foldable, Rank2.Traversable)
 
 -- | Actions on the mempool
 data Action blk r =
     -- | Add some transactions to the mempool
-    NewTxs ![GenTx blk]
+    TryAddTxs ![GenTx blk]
   | -- | Unconditionally sync with the ledger db
     SyncLedger
   | -- | Ask for the current snapshot
     GetSnapshot
-  -- maybe add ? | GetSnapshotFor (Point blk)
+  -- TODO: maybe add 'GetSnapshotFor (Point blk)', but this requires to keep
+  -- track of some more states to make it meaningful.
   deriving (Generic1)
   deriving (Rank2.Functor, Rank2.Foldable, Rank2.Traversable, CommandNames)
 
 -- | Events external to the mempool
 data Event blk r = ChangeLedger
     !(LedgerState blk ValuesMK)
-    !Bool -- ^ Is this a new fork? i.e. should the current mempool tip became
-          -- unreachable? TODO use sth isomorphic with Bool
+    !IsReachable -- ^ Is this a new fork? i.e. should the current mempool tip became
+                 -- unreachable?
   deriving (Generic1)
   deriving (Rank2.Functor, Rank2.Foldable, Rank2.Traversable, CommandNames)
-
-data Command blk r = Action !(Action blk r)
-                   | Event  !(Event blk r)
-  deriving (Generic1)
-  deriving (Rank2.Functor, Rank2.Foldable, Rank2.Traversable)
 
 instance CommandNames (Command blk) where
   cmdName (Action action) = cmdName action
@@ -143,11 +173,89 @@ instance CommandNames (Command blk) where
   cmdNames _ = cmdNames (Proxy @(Action blk r))
             ++ cmdNames (Proxy @(Event blk r))
 
+-- | Wether or not this test must be atomic.
+--
+-- The reason behind this data type is that 'TryAddTxs' is on its nature prone
+-- to race-conditions. And that is OK with us. For example take the following
+-- sequence of commands:
+--
+-- @@@
+--  TryAddTxs [Tx1, Tx2] || GetSnapshot
+-- @@@
+--
+-- If we happen to hit the following interleaving:
+--
+-- @@@
+--  AddTx Tx1; GetSnapshot; AddTx Tx2
+-- @@@
+--
+-- the model will never be able to reproduce the result of the snapshot.
+--
+-- So in order to do a meaningful testing, what we do is:
+--
+-- 1. Run a sequential test of actions ensuring that the responses of the model
+--    and SUT match on 'GetSnaphsot'. This provides us with assurance that the
+--    model works as expected on single-threaded/sequential scenarios.
+--
+-- 2. Run a parallel test where 'TryAddTxs' is unitary (i.e. use the 'Atomic'
+--    modifier) ensuring that the responses of the model and SUT match on
+--    'GetSnaphsot'. This ensures that there are no race conditions on this
+--    case, or rephrased, that the operations on the mempool remain atomic even
+--    if executed on separate threads.
+--
+-- 3. Run a parallel test where 'TryAddTxs' is not unitary (using the
+--    'NonAtomic' modifier) and **NOT** checking the responses of the model
+--    versus the SUT. This ensures that there are no deadlocks and no
+--    errors/exceptions thrown when running in parallel.
+--
+-- We believe that these test cover all the interesting cases and provide enough
+-- assurance on the implementation of the Mempool.
+data MakeAtomic = Atomic | NonAtomic | DontCare
+
+generator ::
+  ( Arbitrary (LedgerState blk ValuesMK)
+  , GetTip (LedgerState blk ValuesMK)
+  , Eq (LedgerState blk ValuesMK)
+  , UnTick blk
+  )
+  => MakeAtomic
+  -> (Int -> LedgerState blk ValuesMK -> Gen [GenTx blk])
+     -- ^ Transaction generator based on an state
+  -> Model blk Symbolic
+  -> Maybe (Gen (Command blk Symbolic))
+generator ma gTxs model =
+   Just $
+    frequency
+      [ (100,
+          case ma of
+            Atomic -> do
+              Action . TryAddTxs <$> (gTxs 1 . unTick $ modelMempoolIntermediateState)
+            _ -> do
+              n <- getPositive <$> arbitrary
+              Action . TryAddTxs <$> (gTxs n . unTick $ modelMempoolIntermediateState)
+        )
+      , (10, pure $ Action SyncLedger)
+      , (10, do
+            ls <- arbitrary `suchThat`
+                  (\x -> (pointSlot (getTip x) > pointSlot (getTip modelLedgerDBTip) || pointSlot (getTip x) < pointSlot (getTip modelLedgerDBTip)) &&
+                         (x == modelMempoolBaseState || pointSlot (getTip x) > pointSlot (getTip modelMempoolBaseState) || pointSlot (getTip x) < pointSlot (getTip modelMempoolBaseState))
+                  )
+            b  <- arbitrary
+            pure $ Event $ ChangeLedger ls b)
+      , (10, pure $ Action GetSnapshot)
+      ]
+  where
+    Model{ modelMempoolIntermediateState
+         , modelMempoolBaseState
+         , modelLedgerDBTip
+         } = model
+
+
 data Response blk r =
     -- | Nothing to tell
     Void
   | -- | Return the contents of a snapshot
-    GotSnapshot !(Snap blk)
+    GotSnapshot ![(GenTx blk, TicketNo)]
   deriving (Generic1)
   deriving (Rank2.Functor, Rank2.Foldable, Rank2.Traversable)
 
@@ -164,64 +272,134 @@ initModel ::
   -> Model blk r
 initModel cfg initialState =
   Model {
-    modelMempoolTip       = (ticked, True)
-  , modelLedgerDBTip      = initialState
-  , modelTxs              = []
-  , modelCapacity         = MempoolCapacityBytes 400
-  , modelLastTicket       = zeroTicketNo
-  , modelSeenStates       = Set.singleton $ castPoint $ getTip initialState
-  , modelMempoolWasFilled = False
+    modelMempoolIntermediateState    = ticked
+  , modelMempoolBaseState            = initialState
+  , modelMempoolBaseStateIsReachable = IsReachable
+  , modelLedgerDBTip                 = initialState
+  , modelTxs                         = []
+  , modelRemainingCapacity           = txMaxBytes'
+  , modelLastSeenTicketNo            = zeroTicketNo
+  , modelMempoolWasFilled            = False
   }
   where ticked = tick cfg initialState
-
-generator ::
-  ( Arbitrary (LedgerState blk ValuesMK)
-  , GetTip (LedgerState blk ValuesMK)
-  , StandardHash blk
-  , UnTick blk
-  )
-  => (Int -> LedgerState blk ValuesMK -> Gen [GenTx blk])
-     -- ^ Transaction generator based on an state
-  -> Model blk Symbolic
-  -> Maybe (Gen (Command blk Symbolic))
-generator gTxs Model{modelMempoolTip, modelSeenStates} =
-   Just $ sized $ \n ->
-    frequency
-      [ (100, Action . NewTxs <$> (gTxs n . unTick . fst $ modelMempoolTip))
-      , (10, pure $ Action SyncLedger)
-      , (10, do
-            b  <- arbitrary
-            ls <- arbitrary `suchThat` (  (`notElem` modelSeenStates)
-                                         . castPoint
-                                         . getTip
-                                       ) -- FIXME maybe not needed?
-            pure $ Event $ ChangeLedger ls b)
-      , (10, pure $ Action GetSnapshot)
-      ]
-
-data Snap blk = Snap
- { snapTxs         :: ![(GenTx blk, TicketNo)] }
 
 mock ::
      Model blk Symbolic
   -> Command blk Symbolic
   -> GenSym (Response blk Symbolic)
 mock model = \case
-  Action (NewTxs _)      -> pure Void
-  Action SyncLedger      -> pure Void
-  Action GetSnapshot     -> pure $ GotSnapshot Snap {
-         snapTxs = modelTxs
-       }
+  Action (TryAddTxs _)     -> pure Void
+  Action SyncLedger        -> pure Void
+  Action GetSnapshot       -> pure $ GotSnapshot $ modelTxs model
   Event (ChangeLedger _ _) -> pure Void
+
+{-------------------------------------------------------------------------------
+  Transitions
+-------------------------------------------------------------------------------}
+
+doSync ::
+  ( ValidateEnvelope blk
+  , LedgerSupportsMempool blk
+  , Eq (TickedLedgerState blk ValuesMK)
+  , Eq (GenTx blk)
+  )
+  => LedgerCfg (LedgerState blk)
+  -> Model blk r
+  -> Model blk r
+doSync cfg model =
+    if mtip == tick cfg dbtip
+    then model
+    else
+      let modelTxs'          = fmap fst mtxs
+          (res, _, cap', st) = foldTxs cfg zeroTicketNo txMaxBytes'
+                               (tick cfg dbtip)
+                               modelTxs'
+          filteredTxSeq      =
+            [ (tx, tk) | (tx, tk) <- mtxs
+                       , tx
+                            `elem` [ txForgetValidated vtx
+                                   | MempoolTxAdded vtx <- fst res
+                                   ]
+           ]
+      in
+        model {
+          modelMempoolIntermediateState = st
+        , modelMempoolBaseStateIsReachable = IsReachable
+        , modelTxs = filteredTxSeq
+        , modelRemainingCapacity = cap'
+        , modelMempoolBaseState = dbtip
+        }
   where
-    Model {
-        modelTxs
+      Model {
+        modelMempoolIntermediateState  = mtip
+      , modelLedgerDBTip = dbtip
+      , modelTxs         = mtxs
       } = model
 
-transitions ::
+doChangeLedger ::
+  (Eq (LedgerState blk ValuesMK))
+  => Model blk r
+  -> LedgerState blk ValuesMK
+  -> IsReachable
+  -> Model blk r
+doChangeLedger model l' b'
+ | l' == modelMempoolBaseState model =
+    model { modelMempoolBaseStateIsReachable = IsReachable
+          , modelLedgerDBTip = l'
+          }
+ | otherwise =
+    model { modelMempoolBaseStateIsReachable = reachable /&& b'
+          , modelLedgerDBTip = l'
+          }
+ where
+    Model {
+        modelMempoolBaseStateIsReachable = reachable
+      } = model
+
+doTryAddTxs ::
+  ( LedgerSupportsMempool blk
+  , ValidateEnvelope blk
+  , Eq (TickedLedgerState blk ValuesMK)
+  , Eq (GenTx blk)
+  )
+  => LedgerCfg (LedgerState blk)
+  -> Model blk r
+  -> [GenTx blk]
+  -> Model blk r
+doTryAddTxs _ model [] = model
+doTryAddTxs cfg model txs =
+    if isReachable reachable
+    then
+      let nextTicket = succ $ modelLastSeenTicketNo model
+          (res, tk, cap', st) = foldTxs cfg nextTicket modelRemainingCapacity
+                                mtip
+                                $ txs
+          modelTxs'     = mtxs ++
+                        zip [ txForgetValidated vtx
+                            | MempoolTxAdded vtx <- fst res
+                            ]
+                            [nextTicket..]
+      in
+        model {
+           modelMempoolIntermediateState = st
+         , modelTxs                      = modelTxs'
+         , modelLastSeenTicketNo         = pred tk
+         , modelRemainingCapacity        = cap'
+         , modelMempoolWasFilled         = modelMempoolWasFilled || (not . null . snd $ res)
+         }
+    else doTryAddTxs cfg (doSync cfg model) txs
+  where
+    Model {
+        modelMempoolIntermediateState = mtip
+      , modelMempoolBaseStateIsReachable = reachable
+      , modelTxs         = mtxs
+      , modelMempoolWasFilled
+      , modelRemainingCapacity
+      } = model
+
+transition ::
      ( Eq (GenTx blk)
      , Eq (TickedLedgerState blk ValuesMK)
-     , HasTxId (GenTx blk)
      , LedgerSupportsMempool blk
      , ToExpr (GenTx blk)
      , ToExpr (LedgerState blk ValuesMK)
@@ -232,82 +410,22 @@ transitions ::
   -> Command blk r
   -> Response blk r
   -> Model blk r
-transitions cfg model cmd resp = case (cmd, resp) of
-  (Action (NewTxs txs), Void) ->
-    if reachable
-    then
-      let nextTicket = succ $ modelLastTicket model
-          (res, tk, _, st) = foldTxs cfg nextTicket (currentRemainingCap model)
-                              mtip
-                            $ txs
-          modelTxs'     = mtxs ++
-                        zip [ txForgetValidated vtx
-                            | MempoolTxAdded vtx <- fst res
-                            ]
-                            [nextTicket..]
-      in
-        model {
-           modelMempoolTip = (st, reachable)
-         , modelTxs        = modelTxs'
-         , modelLastTicket = if tk == zeroTicketNo
-                             then zeroTicketNo
-                             else pred tk
-         , modelCapacity   = MempoolCapacityBytes 400
-         , modelMempoolWasFilled = modelMempoolWasFilled || (not . null . snd $ res)
-         }
-    else
-      let model' = transitions cfg model (Action SyncLedger) Void
-      in transitions cfg model' cmd Void
-
-  (Event (ChangeLedger l' b'), Void) ->
-        model { modelMempoolTip  = (mtip, reachable && not b')
-              , modelLedgerDBTip = l'
-              , modelSeenStates  = Set.insert (castPoint $ getTip l') seenStates
-              }
+transition cfg model cmd resp = case (cmd, resp) of
+  (Action (TryAddTxs txs), Void) -> doTryAddTxs cfg model txs
+  (Event (ChangeLedger l b), Void) -> doChangeLedger model l b
   (Action GetSnapshot, GotSnapshot{}) -> model
-  (Action SyncLedger, Void) ->
-    if mtip == tick cfg dbtip
-    then model
-    else
-      let modelTxs'       = fmap fst mtxs
-          (res, _, _, st) = foldTxs cfg zeroTicketNo modelCapacity
-                              (tick cfg dbtip)
-                              modelTxs'
-          filteredTxSeq   =
-            [ (tx, tk) | (tx, tk) <- mtxs
-                          , tx
-                            `elem` [ txForgetValidated vtx
-                                   | MempoolTxAdded vtx <- fst res
-                                   ]
-                     ]
-      in
-        model {
-          modelMempoolTip = (st, True)
-        , modelTxs = filteredTxSeq
-        , modelCapacity = MempoolCapacityBytes 400
-        }
-
+  (Action SyncLedger, Void) -> doSync cfg model
   _ -> error $ "mismatched command "
              <> show cmd
              <> " and response "
              <> show resp
-
-  where
-    Model {
-        modelMempoolTip  = (mtip, reachable)
-      , modelLedgerDBTip = dbtip
-      , modelTxs         = mtxs
-      , modelCapacity
-      , modelSeenStates  = seenStates
-      , modelMempoolWasFilled
-      } = model
 
 {-------------------------------------------------------------------------------
   Ledger helper functions
 -------------------------------------------------------------------------------}
 
 -- | Apply a list of transactions short-circuiting if the mempool gets full.
--- Emulates almost exactly the behavior of 'implTryAddTxs'.
+-- Emulates almost exactly the behaviour of 'implTryTryAddTxs'.
 foldTxs ::
   forall blk.
   ( LedgerSupportsMempool blk
@@ -388,50 +506,57 @@ data SUT m blk =
   SUT
   !(Mempool m blk)
     -- ^ A Mempool
-  !(StrictTVar m (Tips blk))
-    -- ^ A TVar with tips. Emulates a ledger db to the extent needed by the
-    -- ledger interface.
+  !(StrictTVar m (MockedLedgerDB blk))
+    -- ^ Emulates a ledger db to the extent needed by the ledger interface.
   deriving Generic
 
 deriving instance ( NoThunks (Mempool m blk)
-                  , NoThunks (StrictTVar m (Tips blk))
+                  , NoThunks (StrictTVar m (MockedLedgerDB blk))
                   ) =>  NoThunks (SUT m blk)
 
--- | The tip of the ledger db and the one from the mempool. The ledger interface
--- will serve the values of the latter if the mempool requests it and is
--- reachable.
-data Tips blk = Tips {
+-- | A very minimal mock of the ledger db. It emulates the contents of the
+-- ledger db, but as we only care about the current tip and the mempool tip (to
+-- know if it is still reachable), we only mock those.
+--
+-- The ledger interface will serve the values from this datatype.
+data MockedLedgerDB blk = MockedLedgerDB {
     ldbTip     :: !(LedgerState blk ValuesMK)
-  , mempoolTip :: !(LedgerState blk ValuesMK, Bool)
+  , mempoolTip :: !(LedgerState blk ValuesMK, IsReachable)
   } deriving (Generic)
 
 -- | Create a ledger interface and provide the tvar to modify it when switching
 -- ledgers.
 newLedgerInterface ::
   ( MonadSTM m
-  , NoThunks (Tips blk)
+  , NoThunks (MockedLedgerDB blk)
   , GetTip (LedgerState blk ValuesMK)
   , LedgerSupportsMempool blk
   )
   => LedgerState blk ValuesMK
-  -> m (LedgerInterface m blk, StrictTVar m (Tips blk))
+  -> m (LedgerInterface m blk, StrictTVar m (MockedLedgerDB blk))
 newLedgerInterface initialLedger = do
-  t <- newTVarIO $ Tips initialLedger (initialLedger, True)
+  t <- newTVarIO $ MockedLedgerDB initialLedger (initialLedger, IsReachable)
   pure $ (,t) $ LedgerInterface {
       getCurrentLedgerState = forgetLedgerTables . ldbTip <$> readTVar t
     , getLedgerTablesAtFor  = \pt txs -> do
         let keys = foldl' (zipLedgerTables (<>)) polyEmptyLedgerTables
                  $ map getTransactionKeySets txs
-        Tips ti (ot, reachable) <- atomically $ readTVar t
-        if pt == castPoint (getTip ti)
+        MockedLedgerDB ti (ot, reachable) <- atomically $ readTVar t
+        if pt == castPoint (getTip ti) -- if asking for tables at the tip of the
+                                       -- ledger db
         then
           let tbs = zipLedgerTables f keys $ projectLedgerTables ti
           in  pure $ Right $ tbs
-        else if pt == castPoint (getTip ot) && reachable
+        else if pt == castPoint (getTip ot) && isReachable reachable
+             -- if asking for tables at the tip of the mempool and it still is
+             -- reachable
              then
                let tbs = zipLedgerTables f keys $ projectLedgerTables ot
                in  pure $ Right $ tbs
-             else pure $ Left $ PointNotFound pt
+             else
+               -- if asking for tables at other point or at the mempool tip but
+               -- it is not reachable
+               pure $ Left $ PointNotFound pt
     }
  where
    f :: Ord k => KeysMK k v -> ValuesMK k v -> ValuesMK k v
@@ -441,7 +566,7 @@ newLedgerInterface initialLedger = do
 -- | Make a SUT
 mkSUT ::
   ( MonadSTM m
-  , NoThunks (Tips blk)
+  , NoThunks (MockedLedgerDB blk)
   , GetTip (LedgerState blk ValuesMK)
   , IOLike m
   , LedgerSupportsProtocol blk
@@ -456,7 +581,7 @@ mkSUT cfg initialLedger = do
   mempool <- openMempoolWithoutSyncThread
                lif
                cfg
-               (MempoolCapacityBytesOverride $ MempoolCapacityBytes 400)
+               (MempoolCapacityBytesOverride txMaxBytes')
                nullTracer
                txInBlockSize
   pure (SUT mempool t)
@@ -469,46 +594,47 @@ semantics ::
 semantics cmd r = do
   SUT m t <- atomically $ readTVar r
   case cmd of
-    Action (NewTxs txs) -> do
+    Action (TryAddTxs txs) -> do
       atomically $ do
-       Tips ti (_, reachable) <- readTVar t
+       MockedLedgerDB ti (_, reachable) <- readTVar t
        -- The mempool tip is not reachable so it will fail. Already change it
-       when (not reachable) $ writeTVar t (Tips ti (ti, True))
+       when (not $ isReachable reachable) $ writeTVar t (MockedLedgerDB ti (ti, IsReachable))
       void $ tryAddTxs m DoNotIntervene txs
       pure Void
 
     Action SyncLedger   -> do
      void $ syncWithLedger m
      atomically $ do
-       Tips ti _ <- readTVar t
+       MockedLedgerDB ti _ <- readTVar t
        -- We just synced with the ledger
-       writeTVar t (Tips ti (ti, True))
+       writeTVar t (MockedLedgerDB ti (ti, IsReachable))
      pure Void
 
     Action GetSnapshot -> do
       snap <- atomically (getSnapshot m)
       pure
-        . GotSnapshot
-        $ Snap [ (txForgetValidated tx, tk)
-               | (tx, tk) <- snapshotTxs snap
-               ]
+        $ GotSnapshot
+        $ first txForgetValidated
+        <$> snapshotTxs snap
 
-    Event (ChangeLedger l' becomesUnreachable) -> atomically $ do
-       Tips _ (ot, reachable) <- readTVar t
-       let ot' = if reachable
-                 then (ot, not becomesUnreachable)
-                 else (ot, reachable)
-       writeTVar t (Tips l' ot')
+    Event (ChangeLedger l' newReachable) -> atomically $ do
+       MockedLedgerDB _ (mempoolTip, reachable) <- readTVar t
+       writeTVar t . MockedLedgerDB l' . (mempoolTip,)
+         $ if l' == mempoolTip
+           then  IsReachable
+           else if isReachable reachable
+                then newReachable
+                else IsNotReachable
        pure Void
 
 {-------------------------------------------------------------------------------
   Conditions
 -------------------------------------------------------------------------------}
 
-noPreconditions :: Model blk Symbolic -> Command blk Symbolic -> Logic
-noPreconditions = const $ const Top
+precondition :: Model blk Symbolic -> Command blk Symbolic -> Logic
+precondition _ _ = Top
 
-postconditions ::
+postcondition ::
   ( LedgerSupportsMempool blk
   , Eq (GenTx blk)
   )
@@ -516,15 +642,22 @@ postconditions ::
   -> Command  blk Concrete
   -> Response blk Concrete
   -> Logic
-postconditions model (Action GetSnapshot) (GotSnapshot (Snap txs)) =
+postcondition model (Action GetSnapshot) (GotSnapshot txs) =
   modelTxs model .== txs
-postconditions _ _ _ = Top
+postcondition _ _ _ = Top
+
+noPostcondition ::
+     Model    blk Concrete
+  -> Command  blk Concrete
+  -> Response blk Concrete
+  -> Logic
+noPostcondition _ _ _ = Top
 
 shrinker :: Model blk Symbolic
          -> Command blk Symbolic
          -> [Command blk Symbolic]
-shrinker _ (Action (NewTxs txs)) =
-  Action . NewTxs <$> shrinkList shrinkNothing txs
+shrinker _ (Action (TryAddTxs txs)) =
+  Action . TryAddTxs <$> shrinkList shrinkNothing txs
 shrinker _ _ = []
 
 {-------------------------------------------------------------------------------
@@ -546,17 +679,22 @@ sm ::
   )
   => LedgerConfig blk
   -> LedgerState blk ValuesMK
+  -> MakeAtomic
   -> (Int -> LedgerState blk ValuesMK -> Gen [GenTx blk])
   -> m (StateMachine (Model blk) (Command blk) m (Response blk))
-sm cfg initialState gTxs = do
+sm cfg initialState ma gTxs = do
   ior <- newTVarIO =<< mkSUT cfg initialState
   pure $ StateMachine {
       QC.initModel     = initModel cfg initialState
-    , QC.transition    = transitions cfg
-    , QC.precondition  = noPreconditions
-    , QC.postcondition = postconditions
+    , QC.transition    = transition cfg
+    , QC.precondition  = precondition
+    , QC.postcondition =
+        case ma of
+          NonAtomic -> noPostcondition
+          Atomic    -> postcondition
+          DontCare  -> postcondition
     , QC.invariant     = Nothing
-    , QC.generator     = generator gTxs
+    , QC.generator     = generator ma gTxs
     , QC.shrinker      = shrinker
     , QC.semantics     = \c -> semantics c ior
     , QC.mock          = mock
@@ -564,8 +702,7 @@ sm cfg initialState gTxs = do
     }
 
 smUnused ::
-  ( HasTxId (GenTx blk)
-  , LedgerSupportsMempool blk
+  ( LedgerSupportsMempool blk
   , Eq (GenTx blk)
   , Arbitrary (LedgerState blk ValuesMK)
   , ToExpr (LedgerState blk ValuesMK)
@@ -576,15 +713,20 @@ smUnused ::
   )
   => LedgerConfig blk
   -> LedgerState blk ValuesMK
+  -> MakeAtomic
   -> (Int -> LedgerState blk ValuesMK -> Gen [GenTx blk])
   -> StateMachine (Model blk) (Command blk) IO (Response blk)
-smUnused cfg initialState gTxs = StateMachine {
+smUnused cfg initialState ma gTxs = StateMachine {
     QC.initModel     = initModel cfg initialState
-  , QC.transition    = transitions cfg
-  , QC.precondition  = noPreconditions
-  , QC.postcondition = postconditions
+  , QC.transition    = transition cfg
+  , QC.precondition  = precondition
+  , QC.postcondition =
+        case ma of
+          NonAtomic -> noPostcondition
+          Atomic    -> postcondition
+          DontCare  -> postcondition
   , QC.invariant     = Nothing
-  , QC.generator     = generator gTxs
+  , QC.generator     = generator ma gTxs
   , QC.shrinker      = shrinker
   , QC.semantics     = undefined
   , QC.mock          = mock
@@ -623,25 +765,24 @@ prop_mempoolSequential cfg initialState gTxs = forAllCommands smUnused' Nothing 
           $ tabulate "Command sequence length"
               [QC.lengthCommands cmds `bucketiseBy` 10]
           $ tabulate "Maximum ticket number"
-              [(\(TicketNo t) -> t) (modelLastTicket model) `bucketiseBy` 5]
+              [(\(TicketNo t) -> t) (modelLastSeenTicketNo model) `bucketiseBy` 5]
           $ tabulate "Number of txs to add"
-              [ show $ length txs
-              | (_, Invocation (Action (NewTxs txs)) _) <- unHistory hist
+              [ length txs `bucketiseBy` 10
+              | (_, Invocation (Action (TryAddTxs txs)) _) <- unHistory hist
               ]
           $ tabulate "Mempool was filled"
               [ show $ modelMempoolWasFilled model ]
           $ res === Ok
     )
   where
-    smUnused' = smUnused cfg initialState gTxs
-    sm'       = sm       cfg initialState gTxs
+    smUnused' = smUnused cfg initialState DontCare gTxs
+    sm'       = sm       cfg initialState DontCare gTxs
 
     bucketiseBy v n =
       let
         l = (v `div` n) * n
       in
         "[" <> show l <> "-" <> show (l + n) <> ")"
-
 
 prop_mempoolParallel ::
   ( HasTxId (GenTx blk)
@@ -658,9 +799,10 @@ prop_mempoolParallel ::
   )
   => LedgerConfig blk
   -> LedgerState blk ValuesMK
+  -> MakeAtomic
   -> (Int -> LedgerState blk ValuesMK -> Gen [GenTx blk])
   -> Property
-prop_mempoolParallel cfg initialState gTxs = forAllParallelCommands smUnused' Nothing $
+prop_mempoolParallel cfg initialState ma gTxs = forAllParallelCommands smUnused' Nothing $
   \cmds -> monadicIO $ do
         res <- runParallelCommandsWithSetup sm' cmds
         prettyParallelCommandsWithOpts
@@ -668,22 +810,34 @@ prop_mempoolParallel cfg initialState gTxs = forAllParallelCommands smUnused' No
           (Just (GraphOptions "./mempoolParallel.png" Png))
           res
  where
-   smUnused' = smUnused cfg initialState gTxs
-   sm'       = sm       cfg initialState gTxs
+   smUnused' = smUnused cfg initialState ma gTxs
+   sm'       = sm       cfg initialState ma gTxs
 
+-- | See 'MakeAtomic' on the reasoning behind having these tests.
 tests :: TestTree
 tests = testGroup "QSM"
         [ testProperty "sequential"
           $ prop_mempoolSequential testLedgerConfig testInitLedger
           $ \i -> fmap (fmap fst . fst) . genTxs i
-        , testProperty "parallel"
-          $ prop_mempoolParallel testLedgerConfig testInitLedger
-          $ \i -> fmap (fmap fst . fst) . genTxs i
+        , testGroup "parallel"
+          [ testProperty "atomic"
+            $ prop_mempoolParallel testLedgerConfig testInitLedger Atomic
+            $ \i -> fmap (fmap fst . fst) . genTxs i
+          , testProperty "non atomic"
+            $ prop_mempoolParallel testLedgerConfig testInitLedger NonAtomic
+            $ \i -> fmap (fmap fst . fst) . genTxs i
+          ]
         ]
 
 {-------------------------------------------------------------------------------
   Instances
 -------------------------------------------------------------------------------}
+
+-- | The 'TestBlock' txMaxBytes is fixed to a very high number. We use this
+-- local declaration to have a mempool that sometimes fill but still don't make
+-- it configurable.
+txMaxBytes' :: MempoolCapacityBytes
+txMaxBytes' = MempoolCapacityBytes 400
 
 instance Eq (Validated (GenTx blk)) => Eq (TxSeq (Validated (GenTx blk))) where
   s1 == s2 = toList s1 == toList s2
@@ -703,12 +857,12 @@ instance ( ToExpr (TxId (GenTx blk))
          ) => ToExpr (Model blk r) where
 
   toExpr model = Rec "Model" $ TD.fromList
-    [ ("mempoolTip", toExpr $ fst $ modelMempoolTip model)
-    , ("reachable", toExpr $ snd $ modelMempoolTip model)
+    [ ("mempoolTip", toExpr $ modelMempoolIntermediateState model)
+    , ("reachable", toExpr $ modelMempoolBaseStateIsReachable model)
     , ("ledgerTip", toExpr $ modelLedgerDBTip model)
     , ("txs", toExpr $ modelTxs model)
-    , ("capacity", toExpr $ getMempoolCapacityBytes $ modelCapacity model)
-    , ("lastTicket", toExpr $ modelLastTicket model)]
+    , ("capacity", toExpr $ getMempoolCapacityBytes $ modelRemainingCapacity model)
+    , ("lastTicket", toExpr $ modelLastSeenTicketNo model)]
 
 instance ( ToExpr (TxId (GenTx blk))
          , ToExpr (GenTx blk)
@@ -718,7 +872,7 @@ instance ( ToExpr (TxId (GenTx blk))
   show = show . toExpr
 
 instance ToExpr (GenTx blk) => ToExpr (Action blk r) where
-  toExpr (NewTxs txs) = App "NewTxs" $ map toExpr txs
+  toExpr (TryAddTxs txs) = App "TryAddTxs" $ map toExpr txs
   toExpr SyncLedger   = App "SyncLedger" []
   toExpr GetSnapshot  = App "GetSnapshot" []
 
@@ -756,8 +910,8 @@ instance ( ToExpr (GenTx blk)
 
   toExpr Void = App "Void" []
   toExpr (GotSnapshot s) =
-    Rec "Snap" $
-      TD.fromList [ ("txs", toExpr $ snapTxs s) ]
+    Rec "GotSnapshot" $
+      TD.fromList [ ("txs", toExpr s) ]
 
 instance ( ToExpr (GenTx blk)
          , LedgerSupportsMempool blk) => Show (Response blk r) where
@@ -765,10 +919,11 @@ instance ( ToExpr (GenTx blk)
 
 deriving newtype instance ToExpr (TicketNo)
 
-deriving instance NoThunks (LedgerState blk ValuesMK) => NoThunks (Tips blk)
+deriving instance NoThunks (LedgerState blk ValuesMK) => NoThunks (MockedLedgerDB blk)
 
 instance Arbitrary (LedgerState TestBlock ValuesMK) where
-  arbitrary = sized $ \n -> do
+  arbitrary = do
+    n <- getPositive <$> arbitrary
     (txs, _) <- genValidTxs n testInitLedger
     case runExcept $ repeatedlyM (flip applyTxToLedger) txs testInitLedger of
       Left _   -> error "Must not happen"
@@ -808,3 +963,7 @@ class UnTick blk where
 
 instance UnTick TestBlock where
   unTick = getTickedSimpleLedgerState
+
+deriving instance NoThunks MempoolSize
+
+deriving instance NoThunks (TraceEventMempool TestBlock)

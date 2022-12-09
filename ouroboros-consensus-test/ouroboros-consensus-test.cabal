@@ -160,6 +160,7 @@ test-suite test-consensus
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
+                       Test.Consensus.Mempool.Util
                        Test.Consensus.Mempool.StateMachine
                        Test.Consensus.Node
                        Test.Consensus.ResourceRegistry
