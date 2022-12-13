@@ -19,9 +19,6 @@ license-files:
 author:             Marcin Szamotulski
 maintainer:         coot@coot.me
 
--- A copyright notice.
-copyright: 2021 Input Output (Hong Kong) Ltd.
--- category:
 extra-source-files: CHANGELOG.md
 
 library
