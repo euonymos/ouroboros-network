@@ -7,7 +7,7 @@ license-files:
   LICENSE
   NOTICE
 author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
-maintainer:
+maintainer:          marcin.szamotulski@iohk.io
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md

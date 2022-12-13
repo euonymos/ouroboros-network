@@ -7,7 +7,7 @@ license-files:
   LICENSE
   NOTICE
 author:              IOHK Engineering Team
-maintainer:          operations@iohk.io
+maintainer:          marcin.szamotulski@iohk.io
 category:            Network
 build-type:          Simple
 -- extra-source-files:  ChangeLog.md
