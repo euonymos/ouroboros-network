@@ -1,9 +1,10 @@
-{-# LANGUAGE DeriveGeneric              #-}
+  {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE FlexibleContexts           #-}
 
 -- This module is for examples and tests (not the library) so orphans are ok
 {-# OPTIONS_GHC -Wno-orphans #-}
