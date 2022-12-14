@@ -12,8 +12,6 @@ author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:
 category:            Network
 build-type:          Simple
-extra-source-files:
-  ChangeLog.md
 
 flag asserts
   description: Enable assertions
