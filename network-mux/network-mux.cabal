@@ -47,8 +47,8 @@ library
                        io-classes     ^>=0.3,
                        strict-stm     ^>=0.2,
                        contra-tracer   >=0.1 && <0.2,
-                       monoidal-synchronisation
-                                       >=0.1 && <0.2,
+                       monoidal-synchronisation,
+                       --                >=0.1 && <0.2,
 
                        array           >=0.5 && <0.6,
                        binary          >=0.8 && <0.11,
